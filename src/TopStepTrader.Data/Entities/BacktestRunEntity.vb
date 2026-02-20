@@ -29,7 +29,6 @@ Namespace TopStepTrader.Data.Entities
         <Column(TypeName:="decimal(18,2)")>
         Public Property InitialCapital As Decimal
 
-        <Required>
         <MaxLength(50)>
         Public Property ModelVersion As String = String.Empty
 
@@ -37,12 +36,19 @@ Namespace TopStepTrader.Data.Entities
 
         Public Property TotalTrades As Integer = 0
         Public Property WinningTrades As Integer = 0
+        Public Property LosingTrades As Integer = 0
 
         <Column(TypeName:="decimal(18,2)")>
         Public Property TotalPnL As Decimal = 0D
 
         <Column(TypeName:="decimal(18,2)")>
+        Public Property FinalCapital As Decimal = 0D
+
+        <Column(TypeName:="decimal(18,2)")>
         Public Property MaxDrawdown As Decimal = 0D
+
+        <Column(TypeName:="decimal(18,2)")>
+        Public Property AveragePnLPerTrade As Decimal = 0D
 
         Public Property SharpeRatio As Single?
         Public Property WinRate As Single?
@@ -73,9 +79,10 @@ Namespace TopStepTrader.Data.Entities
 
         Public Property ExitTime As DateTimeOffset?
 
-        ''' <summary>0=Buy, 1=Sell</summary>
+        ''' <summary>"Buy" or "Sell"</summary>
         <Required>
-        Public Property Side As Byte
+        <MaxLength(10)>
+        Public Property Side As String = String.Empty
 
         <Required>
         <Column(TypeName:="decimal(18,6)")>

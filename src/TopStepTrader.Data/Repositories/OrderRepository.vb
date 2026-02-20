@@ -27,15 +27,27 @@ Namespace TopStepTrader.Data.Repositories
 
         Public Async Function UpdateOrderStatusAsync(internalId As Long,
                                                      status As OrderStatus,
+                                                     Optional externalOrderId As Long? = Nothing,
                                                      Optional fillPrice As Decimal? = Nothing,
                                                      Optional filledAt As DateTimeOffset? = Nothing,
                                                      Optional cancel As CancellationToken = Nothing) As Task
             Dim entity = Await _context.Orders.FindAsync(New Object() {internalId}, cancel)
             If entity Is Nothing Then Return
             entity.Status = CByte(status)
+            If externalOrderId.HasValue Then entity.ExternalOrderId = externalOrderId
             If fillPrice.HasValue Then entity.FillPrice = fillPrice
             If filledAt.HasValue Then entity.FilledAt = filledAt
             Await _context.SaveChangesAsync(cancel)
+        End Function
+
+        ''' <summary>Returns all open orders across all accounts (for cancel-all operations).</summary>
+        Public Async Function GetOpenOrdersAsync(Optional cancel As CancellationToken = Nothing) As Task(Of List(Of Order))
+            Dim openStatuses = {CByte(OrderStatus.Pending), CByte(OrderStatus.Working)}
+            Dim entities = Await _context.Orders _
+                .Where(Function(o) openStatuses.Contains(o.Status)) _
+                .OrderByDescending(Function(o) o.PlacedAt) _
+                .ToListAsync(cancel)
+            Return entities.Select(AddressOf MapToModel).ToList()
         End Function
 
         Public Async Function GetOpenOrdersAsync(accountId As Long,
@@ -61,6 +73,16 @@ Namespace TopStepTrader.Data.Repositories
             Return entities.Select(AddressOf MapToModel).ToList()
         End Function
 
+        ''' <summary>Today's total P&amp;L across all accounts (for risk guard without account context).</summary>
+        Public Async Function GetTodayPnLAsync(Optional cancel As CancellationToken = Nothing) As Task(Of Decimal)
+            Dim todayStart = DateTimeOffset.UtcNow.Date
+            Dim pnl = Await _context.Orders _
+                .Where(Function(o) o.Status = CByte(OrderStatus.Filled) _
+                               AndAlso o.FilledAt >= todayStart) _
+                .SumAsync(Function(o) If(o.FillPrice.HasValue, o.FillPrice.Value, 0D), cancel)
+            Return pnl   ' Simplified — real P&L needs entry vs exit price tracking
+        End Function
+
         Public Async Function GetTodayPnLAsync(accountId As Long,
                                                Optional cancel As CancellationToken = Nothing) As Task(Of Decimal)
             Dim todayStart = DateTimeOffset.UtcNow.Date
@@ -69,7 +91,7 @@ Namespace TopStepTrader.Data.Repositories
                                AndAlso o.Status = CByte(OrderStatus.Filled) _
                                AndAlso o.FilledAt >= todayStart) _
                 .SumAsync(Function(o) If(o.FillPrice.HasValue, o.FillPrice.Value, 0D), cancel)
-            Return pnl   ' Simplified — real P&L needs entry vs exit price tracking
+            Return pnl
         End Function
 
         Private Function MapToModel(entity As OrderEntity) As Order
