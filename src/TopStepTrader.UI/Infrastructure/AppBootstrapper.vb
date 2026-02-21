@@ -79,19 +79,18 @@ Namespace TopStepTrader.UI.Infrastructure
         ''' </summary>
         Public Sub InitialiseServices(host As IHost)
             ' ── Database bootstrap ──────────────────────────────────────────────
-            ' EnsureCreated creates TopStepTraderDb + all tables from the EF model.
-            ' Safe to call on every startup: no-ops if the schema already exists.
-            ' (EF Core migration code-gen does not support VB.NET, so we use this
-            '  approach instead of "dotnet ef migrations add".)
+            ' EnsureCreated creates the SQLite .db file + all tables from the EF model
+            ' the first time the app runs. On subsequent startups it is a no-op.
+            ' The .db file lives next to the executable (resolved in DataServiceExtensions).
             Try
                 Using scope = host.Services.CreateScope()
                     Dim db = scope.ServiceProvider.GetRequiredService(Of AppDbContext)()
                     db.Database.EnsureCreated()
                 End Using
             Catch ex As Exception
-                ' Surface the error without crashing — app can still start if DB is unavailable
+                ' Surface the error without crashing — app can still start if DB creation fails
                 System.Diagnostics.Trace.TraceError(
-                    "Database initialisation failed — SQL Server may be unavailable: {0}", ex.Message)
+                    "Database initialisation failed: {0}", ex.Message)
             End Try
 
             ' ── ML model manager ────────────────────────────────────────────────
