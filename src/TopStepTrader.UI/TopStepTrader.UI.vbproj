@@ -2,12 +2,13 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <RootNamespace></RootNamespace>
     <AssemblyName>TopStepTrader.UI</AssemblyName>
-    <StartupObject>TopStepTrader.UI.App</StartupObject>
-<Platforms>x64</Platforms>
+    <StartupObject>TopStepTrader.UI.Program</StartupObject>
+    <Platforms>x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,7 +24,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.*" />
     <!-- LiveChartsCore requires pre-release 2.x; add when stable is published -->
     <!-- <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" Version="2.*-*" /> -->
-<PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
   </ItemGroup>
 
   <ItemGroup>
