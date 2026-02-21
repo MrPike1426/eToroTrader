@@ -99,6 +99,11 @@
                                 Command="{Binding CancelCommand}"
                                 Style="{StaticResource DangerButtonStyle}"
                                 Margin="12,0,0,0" Width="80"/>
+                        <Button Content="🧠  Train Model"
+                                Command="{Binding TrainModelCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Margin="24,0,0,0" Width="160"
+                                ToolTip="Train / retrain the ML signal model using bar history from the database"/>
                         <TextBlock Text="{Binding ProgressText}"
                                    VerticalAlignment="Center" Margin="20,0,0,0"
                                    Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>

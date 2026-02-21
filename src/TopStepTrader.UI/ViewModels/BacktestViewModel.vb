@@ -11,11 +11,14 @@ Namespace TopStepTrader.UI.ViewModels
     ''' <summary>
     ''' Backtest configuration, execution, and results display.
     ''' Shows a trade-list grid and summary metrics.
+    ''' Also provides the "Train Model" command to trigger initial / periodic
+    ''' ML retraining from bar history stored in the database.
     ''' </summary>
     Public Class BacktestViewModel
         Inherits ViewModelBase
 
-        Private ReadOnly _backtestService As IBacktestService
+        Private ReadOnly _backtestService  As IBacktestService
+        Private ReadOnly _trainingService  As IModelTrainingService
         Private _cancelSource As CancellationTokenSource
 
         ' ── Configuration form ───────────────────────────────────────────────
@@ -111,6 +114,19 @@ Namespace TopStepTrader.UI.ViewModels
                 SetProperty(_isRunning, value)
                 OnPropertyChanged(NameOf(CanRun))
                 OnPropertyChanged(NameOf(CanCancel))
+                OnPropertyChanged(NameOf(CanTrain))
+            End Set
+        End Property
+
+        Private _isTraining As Boolean
+        Public Property IsTraining As Boolean
+            Get
+                Return _isTraining
+            End Get
+            Set(value As Boolean)
+                SetProperty(_isTraining, value)
+                OnPropertyChanged(NameOf(CanTrain))
+                OnPropertyChanged(NameOf(CanRun))
             End Set
         End Property
 
@@ -136,13 +152,19 @@ Namespace TopStepTrader.UI.ViewModels
 
         Public ReadOnly Property CanRun As Boolean
             Get
-                Return Not _isRunning
+                Return Not _isRunning AndAlso Not _isTraining
             End Get
         End Property
 
         Public ReadOnly Property CanCancel As Boolean
             Get
                 Return _isRunning
+            End Get
+        End Property
+
+        Public ReadOnly Property CanTrain As Boolean
+            Get
+                Return Not _isRunning AndAlso Not _isTraining
             End Get
         End Property
 
@@ -226,15 +248,19 @@ Namespace TopStepTrader.UI.ViewModels
         Public ReadOnly Property RunCommand          As RelayCommand
         Public ReadOnly Property CancelCommand       As RelayCommand
         Public ReadOnly Property LoadHistoryCommand  As RelayCommand
+        Public ReadOnly Property TrainModelCommand   As RelayCommand
 
         ' ── Constructor ──────────────────────────────────────────────────────
 
-        Public Sub New(backtestService As IBacktestService)
+        Public Sub New(backtestService As IBacktestService,
+                       trainingService As IModelTrainingService)
             _backtestService = backtestService
+            _trainingService = trainingService
 
-            RunCommand         = New RelayCommand(AddressOf ExecuteRun,    Function() CanRun)
-            CancelCommand      = New RelayCommand(AddressOf ExecuteCancel, Function() CanCancel)
+            RunCommand         = New RelayCommand(AddressOf ExecuteRun,        Function() CanRun)
+            CancelCommand      = New RelayCommand(AddressOf ExecuteCancel,     Function() CanCancel)
             LoadHistoryCommand = New RelayCommand(AddressOf LoadPreviousRuns)
+            TrainModelCommand  = New RelayCommand(AddressOf ExecuteTrainModel, Function() CanTrain)
 
             AddHandler _backtestService.ProgressUpdated, AddressOf OnProgress
         End Sub
@@ -242,6 +268,36 @@ Namespace TopStepTrader.UI.ViewModels
         Public Sub LoadDataAsync()
             LoadPreviousRuns()
         End Sub
+
+        ' ── Train Model ───────────────────────────────────────────────────────
+
+        Private Sub ExecuteTrainModel()
+            IsTraining   = True
+            ProgressText = "Training ML model on DB bars... (may take 30–60 s)"
+            Progress     = 0
+
+            Task.Run(Async Function()
+                         Try
+                             Dim cts = New CancellationTokenSource(TimeSpan.FromMinutes(5))
+                             Dim metrics = Await _trainingService.RetrainAsync(cts.Token)
+
+                             Dispatch(Sub()
+                                          If metrics IsNot Nothing Then
+                                              ProgressText = $"Model trained — Acc: {metrics.Accuracy:P1}  AUC: {metrics.AUC:F3}  F1: {metrics.F1Score:F3}  Samples: {metrics.TrainingSamples}"
+                                          Else
+                                              ProgressText = "Training skipped — insufficient bar data (need ≥ 200 bars)"
+                                          End If
+                                          Progress = 100
+                                      End Sub)
+                         Catch ex As Exception
+                             Dispatch(Sub() ProgressText = $"Training error: {ex.Message}")
+                         Finally
+                             Dispatch(Sub() IsTraining = False)
+                         End Try
+                     End Function)
+        End Sub
+
+        ' ── Backtest Run ──────────────────────────────────────────────────────
 
         Private Sub ExecuteRun()
             Dim contractId = _contractIdText.Trim()

@@ -40,10 +40,16 @@ Namespace TopStepTrader.Data.Repositories
                                                      from As DateTime,
                                                      [to] As DateTime,
                                                      Optional cancel As CancellationToken = Nothing) As Task(Of List(Of TradeSignal))
-            Dim entities = Await _context.Signals _
-                .Where(Function(s) s.ContractId = contractId _
-                               AndAlso s.GeneratedAt >= from _
-                               AndAlso s.GeneratedAt <= [to]) _
+            ' Build the query — only filter by ContractId when a non-empty filter is supplied.
+            Dim query = _context.Signals.AsQueryable()
+
+            If Not String.IsNullOrWhiteSpace(contractId) Then
+                query = query.Where(Function(s) s.ContractId = contractId)
+            End If
+
+            query = query.Where(Function(s) s.GeneratedAt >= from AndAlso s.GeneratedAt <= [to])
+
+            Dim entities = Await query _
                 .OrderByDescending(Function(s) s.GeneratedAt) _
                 .ToListAsync(cancel)
 
