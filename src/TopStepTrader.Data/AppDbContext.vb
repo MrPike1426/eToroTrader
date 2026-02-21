@@ -10,12 +10,13 @@ Namespace TopStepTrader.Data
             MyBase.New(options)
         End Sub
 
-        Public Property Bars As DbSet(Of BarEntity)
-        Public Property Signals As DbSet(Of SignalEntity)
-        Public Property Orders As DbSet(Of OrderEntity)
-        Public Property BacktestRuns As DbSet(Of BacktestRunEntity)
+        Public Property Bars          As DbSet(Of BarEntity)
+        Public Property Signals       As DbSet(Of SignalEntity)
+        Public Property Orders        As DbSet(Of OrderEntity)
+        Public Property BacktestRuns  As DbSet(Of BacktestRunEntity)
         Public Property BacktestTrades As DbSet(Of BacktestTradeEntity)
-        Public Property RiskEvents As DbSet(Of RiskEventEntity)
+        Public Property RiskEvents    As DbSet(Of RiskEventEntity)
+        Public Property TradeOutcomes As DbSet(Of TradeOutcomeEntity)
 
         Protected Overrides Sub OnModelCreating(modelBuilder As ModelBuilder)
             MyBase.OnModelCreating(modelBuilder)
@@ -58,6 +59,16 @@ Namespace TopStepTrader.Data
                 .WithMany() _
                 .HasForeignKey(Function(o) o.SourceSignalId) _
                 .OnDelete(DeleteBehavior.SetNull)
+
+            ' TradeOutcomes — index for resolution queries
+            modelBuilder.Entity(Of TradeOutcomeEntity)() _
+                .HasIndex(Function(o) New With {o.IsOpen, o.EntryTime}) _
+                .HasDatabaseName("IX_TradeOutcomes_IsOpen_EntryTime")
+
+            modelBuilder.Entity(Of TradeOutcomeEntity)() _
+                .HasIndex(Function(o) o.SignalId) _
+                .HasDatabaseName("IX_TradeOutcomes_SignalId")
+
         End Sub
 
     End Class

@@ -6,37 +6,42 @@ Imports TopStepTrader.Core.Events
 Imports TopStepTrader.Core.Interfaces
 Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Core.Settings
+Imports TopStepTrader.Services.Feedback
 
 Namespace TopStepTrader.Services.Trading
 
     ''' <summary>
     ''' Listens to ISignalService.SignalGenerated events and, when AutoExecutionEnabled=True,
     ''' passes orders through RiskGuardService before submitting via IOrderService.
+    ''' After placement, notifies OutcomeTracker so the ML feedback loop can measure P&amp;L.
     ''' Auto-execution is OFF by default and must be explicitly enabled in Settings.
     ''' </summary>
     Public Class AutoExecutionService
         Implements IDisposable
 
-        Private ReadOnly _signalService As ISignalService
-        Private ReadOnly _orderService As IOrderService
-        Private ReadOnly _riskGuard As IRiskGuardService
+        Private ReadOnly _signalService  As ISignalService
+        Private ReadOnly _orderService   As IOrderService
+        Private ReadOnly _riskGuard      As IRiskGuardService
         Private ReadOnly _accountService As IAccountService
-        Private ReadOnly _settings As RiskSettings
-        Private ReadOnly _logger As ILogger(Of AutoExecutionService)
+        Private ReadOnly _outcomeTracker As OutcomeTracker
+        Private ReadOnly _settings       As RiskSettings
+        Private ReadOnly _logger         As ILogger(Of AutoExecutionService)
         Private _disposed As Boolean = False
 
-        Public Sub New(signalService As ISignalService,
-                       orderService As IOrderService,
-                       riskGuard As IRiskGuardService,
+        Public Sub New(signalService  As ISignalService,
+                       orderService   As IOrderService,
+                       riskGuard      As IRiskGuardService,
                        accountService As IAccountService,
-                       options As IOptions(Of RiskSettings),
-                       logger As ILogger(Of AutoExecutionService))
-            _signalService = signalService
-            _orderService = orderService
-            _riskGuard = riskGuard
+                       outcomeTracker As OutcomeTracker,
+                       options        As IOptions(Of RiskSettings),
+                       logger         As ILogger(Of AutoExecutionService))
+            _signalService  = signalService
+            _orderService   = orderService
+            _riskGuard      = riskGuard
             _accountService = accountService
-            _settings = options.Value
-            _logger = logger
+            _outcomeTracker = outcomeTracker
+            _settings       = options.Value
+            _logger         = logger
             AddHandler _signalService.SignalGenerated, AddressOf OnSignalGenerated
         End Sub
 
@@ -86,20 +91,27 @@ Namespace TopStepTrader.Services.Trading
             ' Build and submit order
             Dim side = If(signal.SignalType = SignalType.Buy, OrderSide.Buy, OrderSide.Sell)
             Dim order = New Order With {
-                .AccountId = account.Id,
-                .ContractId = signal.ContractId,
-                .Side = side,
-                .OrderType = OrderType.Market,
-                .Quantity = 1,
+                .AccountId     = account.Id,
+                .ContractId    = signal.ContractId,
+                .Side          = side,
+                .OrderType     = OrderType.Market,
+                .Quantity      = 1,
                 .SourceSignalId = signal.Id,
-                .Notes = signal.ContractId.ToString()
+                .Notes         = signal.ContractId.ToString()
             }
 
             _logger.LogInformation(
                 "AUTO-EXECUTE: {Side} x1 for contract {Contract} (signal conf={Conf:F3})",
                 side, signal.ContractId, signal.Confidence)
 
-            Await _orderService.PlaceOrderAsync(order)
+            Dim placedOrder = Await _orderService.PlaceOrderAsync(order)
+
+            ' Record an open outcome for the ML feedback loop
+            Try
+                Await _outcomeTracker.RecordOpenOutcomeAsync(placedOrder)
+            Catch ex As Exception
+                _logger.LogWarning(ex, "Could not record outcome for order {Id}", placedOrder.Id)
+            End Try
         End Function
 
         Public Sub Dispose() Implements IDisposable.Dispose

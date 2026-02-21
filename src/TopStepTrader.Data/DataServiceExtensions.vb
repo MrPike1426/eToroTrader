@@ -25,6 +25,7 @@ Namespace TopStepTrader.Data
             services.AddScoped(Of BarRepository)()
             services.AddScoped(Of SignalRepository)()
             services.AddScoped(Of OrderRepository)()
+            services.AddScoped(Of TradeOutcomeRepository)()
 
         End Sub
 

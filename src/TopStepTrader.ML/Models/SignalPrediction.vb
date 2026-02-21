@@ -39,13 +39,7 @@ Namespace TopStepTrader.ML.Models
 
     End Class
 
-    Public Class ModelMetrics
-        Public Property Accuracy As Double
-        Public Property AUC As Double
-        Public Property F1Score As Double
-        Public Property TrainedAt As DateTimeOffset
-        Public Property TrainingSamples As Integer
-        Public Property ModelVersion As String = String.Empty
-    End Class
+    ' ModelMetrics has been moved to TopStepTrader.Core.Models.ModelMetrics
+    ' to avoid a layering violation (Core must not depend on ML).
 
 End Namespace

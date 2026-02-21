@@ -47,17 +47,36 @@ Namespace TopStepTrader.ML.Training
         ''' <param name="allBars">Full bar history (ascending time order).</param>
         ''' <param name="outputPath">Full path to write the .zip model file.</param>
         ''' <param name="lookAheadBars">How many bars forward to check for profitability.</param>
+        ''' <param name="outcomeLabels">
+        ''' Optional real trade outcome labels keyed by bar timestamp.
+        ''' When provided, the look-ahead heuristic label is replaced by the actual P&amp;L result
+        ''' for any bar whose timestamp matches a recorded outcome.
+        ''' </param>
         Public Function TrainAndSave(allBars As IList(Of MarketBar),
                                      outputPath As String,
-                                     Optional lookAheadBars As Integer = 5) As ModelMetrics
+                                     Optional lookAheadBars As Integer = 5,
+                                     Optional outcomeLabels As Dictionary(Of DateTimeOffset, Boolean) = Nothing) As ModelMetrics
 
-            _logger.LogInformation("Building training dataset from {Count} bars...", allBars.Count)
+            Dim overrideCount = If(outcomeLabels IsNot Nothing, outcomeLabels.Count, 0)
+            _logger.LogInformation(
+                "Building training dataset from {Count} bars ({Overrides} real-outcome overrides)...",
+                allBars.Count, overrideCount)
 
             ' Build labelled feature vectors
             Dim samples = New List(Of BarFeatureVector)()
             For i = BarFeatureExtractor.MinBarsRequired To allBars.Count - lookAheadBars - 1
                 Dim fv = _featureExtractor.ExtractWithLabel(allBars, i, lookAheadBars)
-                If fv IsNot Nothing Then samples.Add(fv)
+                If fv IsNot Nothing Then
+                    ' Override look-ahead heuristic label with real P&L outcome when available
+                    If outcomeLabels IsNot Nothing Then
+                        Dim barTimestamp = allBars(i).Timestamp
+                        Dim realLabel As Boolean
+                        If outcomeLabels.TryGetValue(barTimestamp, realLabel) Then
+                            fv.Label = realLabel
+                        End If
+                    End If
+                    samples.Add(fv)
+                End If
             Next
 
             If samples.Count < 100 Then

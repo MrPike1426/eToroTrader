@@ -6,6 +6,7 @@ Imports TopStepTrader.Data.Repositories
 Imports TopStepTrader.Services.Auth
 Imports TopStepTrader.Services.Backtest
 Imports TopStepTrader.Services.Background
+Imports TopStepTrader.Services.Feedback
 Imports TopStepTrader.Services.Market
 Imports TopStepTrader.Services.Risk
 Imports TopStepTrader.Services.Signals
@@ -47,14 +48,23 @@ Namespace TopStepTrader.Services
             ' ── Backtest
             services.AddScoped(Of IBacktestService, BacktestEngine)()
 
+            ' ── ML Feedback Loop (Phase 7)
+            ' OutcomeTracker is Scoped — OutcomeMonitorWorker creates a scope per tick
+            services.AddScoped(Of OutcomeTracker)()
+            ' ModelTrainingService is Scoped — has Scoped repo dependencies
+            services.AddScoped(Of IModelTrainingService, ModelTrainingService)()
+
             ' ── Background workers
             services.AddSingleton(Of BarIngestionWorker)()
             services.AddSingleton(Of TokenRefreshWorker)()
             services.AddSingleton(Of SignalGenerationWorker)()
+            ' OutcomeMonitorWorker uses IServiceScopeFactory — safe as Singleton
+            services.AddSingleton(Of OutcomeMonitorWorker)()
 
             services.AddHostedService(Function(sp) sp.GetRequiredService(Of TokenRefreshWorker)())
             services.AddHostedService(Function(sp) sp.GetRequiredService(Of BarIngestionWorker)())
             services.AddHostedService(Function(sp) sp.GetRequiredService(Of SignalGenerationWorker)())
+            services.AddHostedService(Function(sp) sp.GetRequiredService(Of OutcomeMonitorWorker)())
 
         End Sub
 
