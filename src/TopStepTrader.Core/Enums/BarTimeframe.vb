@@ -3,6 +3,7 @@ Namespace TopStepTrader.Core.Enums
     ''' <summary>Bar timeframe in minutes. Values used as DB discriminator.</summary>
     Public Enum BarTimeframe As Integer
         OneMinute = 1
+        ThreeMinute = 3
         FiveMinute = 5
         FifteenMinute = 15
         ThirtyMinute = 30

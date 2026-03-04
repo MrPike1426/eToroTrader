@@ -1,0 +1,50 @@
+# TICKET-030: Add Give-Back Governor to Protect Accrued Open Profit
+
+**Status:** Backlog  
+**Priority:** Medium  
+**Severity:** High  
+**Assigned To:** Claude Sonnet 4.6  
+**StartDate:** (unscheduled)  
+**Due Date:** 26/03/2026  
+**TokenEstimate:** 10  
+**Labels:** `feature,risk-management,profit-protection,trade-execution`
+
+---
+
+## Problem Statement
+
+The strategy can build substantial **open profit** during strong momentum moves, particularly when pyramiding is active.  
+However, during volatility spikes or sharp pullbacks, trailing stops may allow a **large percentage of that profit to be given back** before an exit occurs.
+
+While this behavior is sometimes acceptable in trend-following systems, on short timeframes (e.g. 1‑minute futures scalping) it introduces:
+
+- Excessive profit volatility,
+- Psychological frustration (large unrealized → small realized),
+- Session-level expectancy degradation even when individual trades are “winners”.
+
+There is currently **no explicit cap on profit give-back** once a trade has achieved a meaningful unrealized gain.
+
+---
+
+## Desired Outcome
+
+- Protect a configurable portion of **maximum open profit** once achieved.
+- Ensure that large winners do not degrade into marginal outcomes.
+- Apply protection **without forcing early exits** or interfering with normal trailing behavior.
+- Operate as a **governor**, not a hard take-profit.
+
+---
+
+## Requirements
+
+### 1. Max Open Profit Tracking
+During each trade:
+- Track `MaxOpenProfitTicks` (or currency-equivalent) since entry.
+- Update continuously as price moves in favor.
+- Reset when flat.
+
+### 2. Give-Back Threshold
+Define:
+- `MaxGiveBackPercent` (default: 30%)
+
+Calculate:

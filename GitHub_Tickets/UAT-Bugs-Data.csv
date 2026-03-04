@@ -1,0 +1,8 @@
+ID,Found,Severity,Status,Files Affected,Root Cause Category,Fix Complexity,Tests Added
+UAT-BUG-001,2026-03-01,🔴 Critical,✅ Fixed,BarRepository (3) + SignalRepository (2),EF Core String Translation,High,10 regression tests
+UAT-BUG-002,2026-03-01,🔴 Critical,✅ Fixed,TradeOutcomeRepository (2),EF Core Boolean NOT,Medium,0 new tests
+UAT-BUG-003,2026-03-01,🔴 Critical,✅ Fixed,TradeOutcomeRepository (3),EF Core DateTimeOffset,High,0 new tests
+UAT-BUG-004,2026-03-01,🟡 High,✅ Fixed,ModelTrainingService + ViewModel,Design Mismatch,Medium,0 new tests
+UAT-BUG-005,2026-03-01,🔴 Critical,✅ Fixed,BarRepository (3),Data Ordering Logic,High,1 regression test
+UAT-BUG-006,2026-03-01,🟡 High,✅ Fixed,BacktestMetrics + BacktestEngine,Exit Price Calculation,Medium,8 regression tests
+UAT-BUG-007,2026-03-01,🔴 Critical,🔴 OPEN,StrategyExecutionEngine,Position State Flag,High,TBD

@@ -2,6 +2,9 @@
 ## TopStepTrader .gitignore
 ## =============================================
 
+# IDE / AI tool working directories
+.claude/
+
 # SECRETS - NEVER commit these
 **/appsettings.json
 **/appsettings.Development.json

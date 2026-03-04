@@ -1,4 +1,3 @@
-Imports System.Threading
 Imports Microsoft.Extensions.Logging
 Imports Microsoft.Extensions.Options
 Imports TopStepTrader.Core.Enums
@@ -19,29 +18,29 @@ Namespace TopStepTrader.Services.Trading
     Public Class AutoExecutionService
         Implements IDisposable
 
-        Private ReadOnly _signalService  As ISignalService
-        Private ReadOnly _orderService   As IOrderService
-        Private ReadOnly _riskGuard      As IRiskGuardService
+        Private ReadOnly _signalService As ISignalService
+        Private ReadOnly _orderService As IOrderService
+        Private ReadOnly _riskGuard As IRiskGuardService
         Private ReadOnly _accountService As IAccountService
         Private ReadOnly _outcomeTracker As OutcomeTracker
-        Private ReadOnly _settings       As RiskSettings
-        Private ReadOnly _logger         As ILogger(Of AutoExecutionService)
+        Private ReadOnly _settings As RiskSettings
+        Private ReadOnly _logger As ILogger(Of AutoExecutionService)
         Private _disposed As Boolean = False
 
-        Public Sub New(signalService  As ISignalService,
-                       orderService   As IOrderService,
-                       riskGuard      As IRiskGuardService,
+        Public Sub New(signalService As ISignalService,
+                       orderService As IOrderService,
+                       riskGuard As IRiskGuardService,
                        accountService As IAccountService,
                        outcomeTracker As OutcomeTracker,
-                       options        As IOptions(Of RiskSettings),
-                       logger         As ILogger(Of AutoExecutionService))
-            _signalService  = signalService
-            _orderService   = orderService
-            _riskGuard      = riskGuard
+                       options As IOptions(Of RiskSettings),
+                       logger As ILogger(Of AutoExecutionService))
+            _signalService = signalService
+            _orderService = orderService
+            _riskGuard = riskGuard
             _accountService = accountService
             _outcomeTracker = outcomeTracker
-            _settings       = options.Value
-            _logger         = logger
+            _settings = options.Value
+            _logger = logger
             AddHandler _signalService.SignalGenerated, AddressOf OnSignalGenerated
         End Sub
 
@@ -91,13 +90,13 @@ Namespace TopStepTrader.Services.Trading
             ' Build and submit order
             Dim side = If(signal.SignalType = SignalType.Buy, OrderSide.Buy, OrderSide.Sell)
             Dim order = New Order With {
-                .AccountId     = account.Id,
-                .ContractId    = signal.ContractId,
-                .Side          = side,
-                .OrderType     = OrderType.Market,
-                .Quantity      = 1,
+                .AccountId = account.Id,
+                .ContractId = signal.ContractId,
+                .Side = side,
+                .OrderType = OrderType.Market,
+                .Quantity = 1,
                 .SourceSignalId = signal.Id,
-                .Notes         = signal.ContractId
+                .Notes = signal.ContractId
             }
 
             _logger.LogInformation(

@@ -6,12 +6,12 @@ Namespace TopStepTrader.Core.Models
     ''' Lives in Core (not ML) so the Core interface can reference it without a layering violation.
     ''' </summary>
     Public Class ModelMetrics
-        Public Property Accuracy        As Double
-        Public Property AUC             As Double
-        Public Property F1Score         As Double
-        Public Property TrainedAt       As DateTimeOffset
+        Public Property Accuracy As Double
+        Public Property AUC As Double
+        Public Property F1Score As Double
+        Public Property TrainedAt As DateTimeOffset
         Public Property TrainingSamples As Integer
-        Public Property ModelVersion    As String = String.Empty
+        Public Property ModelVersion As String = String.Empty
     End Class
 
 End Namespace

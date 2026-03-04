@@ -18,23 +18,23 @@ Namespace TopStepTrader.Services.Feedback
     Public Class OutcomeTracker
 
         Private ReadOnly _outcomeRepo As TradeOutcomeRepository
-        Private ReadOnly _barRepo     As BarRepository
-        Private ReadOnly _settings    As TradingSettings
-        Private ReadOnly _logger      As ILogger(Of OutcomeTracker)
+        Private ReadOnly _barRepo As BarRepository
+        Private ReadOnly _settings As TradingSettings
+        Private ReadOnly _logger As ILogger(Of OutcomeTracker)
 
         ' Ticks per contract (used for P&L). NQ = $5/tick, ES = $12.50/tick.
         ' A simple configurable constant; production would look this up by contractId.
-        Private Const TickSizePoints   As Decimal = 0.25D
+        Private Const TickSizePoints As Decimal = 0.25D
         Private Const TickValueDollars As Decimal = 12.5D   ' ES default
 
         Public Sub New(outcomeRepo As TradeOutcomeRepository,
-                       barRepo     As BarRepository,
+                       barRepo As BarRepository,
                        tradingOptions As IOptions(Of TradingSettings),
                        logger As ILogger(Of OutcomeTracker))
             _outcomeRepo = outcomeRepo
-            _barRepo     = barRepo
-            _settings    = tradingOptions.Value
-            _logger      = logger
+            _barRepo = barRepo
+            _settings = tradingOptions.Value
+            _logger = logger
         End Sub
 
         ' ── Record new outcome after order placement ───────────────────────────
@@ -49,14 +49,14 @@ Namespace TopStepTrader.Services.Feedback
             If Not order.SourceSignalId.HasValue Then Return
 
             Dim outcome As New TradeOutcome With {
-                .SignalId   = order.SourceSignalId.Value,
-                .OrderId    = order.Id,
+                .SignalId = order.SourceSignalId.Value,
+                .OrderId = order.Id,
                 .ContractId = order.ContractId,
-                .Timeframe  = _settings.DefaultTimeframe,
-                .SignalType  = order.Side.ToString(),
-                .EntryTime  = DateTimeOffset.UtcNow,
+                .Timeframe = _settings.DefaultTimeframe,
+                .SignalType = order.Side.ToString(),
+                .EntryTime = DateTimeOffset.UtcNow,
                 .EntryPrice = If(order.FillPrice.HasValue, order.FillPrice.Value, 0D),
-                .IsOpen     = True
+                .IsOpen = True
             }
 
             Dim id = Await _outcomeRepo.SaveOutcomeAsync(outcome)
@@ -91,7 +91,7 @@ Namespace TopStepTrader.Services.Feedback
                                                cancel As CancellationToken) As Task
             ' Exit window = entry time + (timeframe × 3) minutes
             Dim lookAheadMinutes = entity.Timeframe * 3
-            Dim exitWindow       = entity.EntryTime.AddMinutes(lookAheadMinutes)
+            Dim exitWindow = entity.EntryTime.AddMinutes(lookAheadMinutes)
 
             ' Don't resolve until the exit window has fully elapsed
             If DateTimeOffset.UtcNow < exitWindow Then Return
@@ -134,7 +134,7 @@ Namespace TopStepTrader.Services.Feedback
             Dim exitPrice = exitBar.Close
             Dim direction = If(entity.SignalType = "Buy", 1D, -1D)
             Dim priceDiff = (exitPrice - entryPrice) * direction
-            Dim pnl       = priceDiff / TickSizePoints * TickValueDollars
+            Dim pnl = priceDiff / TickSizePoints * TickValueDollars
 
             Await _outcomeRepo.ResolveOutcomeAsync(
                 entity.Id,

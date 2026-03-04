@@ -20,24 +20,28 @@ Namespace TopStepTrader.Services.Background
     Public Class SignalGenerationWorker
         Implements IHostedService, IDisposable
 
-        Private ReadOnly _scopeFactory    As IServiceScopeFactory
+        Private ReadOnly _scopeFactory As IServiceScopeFactory
         Private ReadOnly _tradingSettings As TradingSettings
-        Private ReadOnly _logger          As ILogger(Of SignalGenerationWorker)
+        Private ReadOnly _logger As ILogger(Of SignalGenerationWorker)
         Private _timer As System.Threading.Timer
         Private _disposed As Boolean = False
 
         Public Property Timeframe As BarTimeframe = BarTimeframe.FiveMinute
 
-        Public Sub New(scopeFactory    As IServiceScopeFactory,
-                       tradingOptions  As IOptions(Of TradingSettings),
-                       logger          As ILogger(Of SignalGenerationWorker))
-            _scopeFactory    = scopeFactory
+        Public Sub New(scopeFactory As IServiceScopeFactory,
+                       tradingOptions As IOptions(Of TradingSettings),
+                       logger As ILogger(Of SignalGenerationWorker))
+            _scopeFactory = scopeFactory
             _tradingSettings = tradingOptions.Value
-            _logger          = logger
+            _logger = logger
         End Sub
 
         Public Function StartAsync(cancellationToken As CancellationToken) As Task _
             Implements IHostedService.StartAsync
+            If Not _tradingSettings.EnableBackgroundIngestion Then
+                _logger.LogInformation("SignalGenerationWorker: disabled via EnableBackgroundIngestion setting, not starting")
+                Return Task.CompletedTask
+            End If
             _logger.LogInformation("SignalGenerationWorker started")
             _timer = New System.Threading.Timer(
                 AddressOf DoWork, Nothing,
@@ -54,7 +58,7 @@ Namespace TopStepTrader.Services.Background
             End If
 
             Using scope = _scopeFactory.CreateScope()
-                Dim signalService    = scope.ServiceProvider.GetRequiredService(Of ISignalService)()
+                Dim signalService = scope.ServiceProvider.GetRequiredService(Of ISignalService)()
                 Dim ingestionService = scope.ServiceProvider.GetRequiredService(Of BarIngestionService)()
 
                 For Each contractId In contractIds

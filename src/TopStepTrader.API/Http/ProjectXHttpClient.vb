@@ -5,6 +5,7 @@ Imports System.Text.Json
 Imports System.Threading
 Imports Microsoft.Extensions.Logging
 Imports TopStepTrader.API.RateLimiting
+Imports TopStepTrader.Core.Logging
 
 Namespace TopStepTrader.API.Http
 
@@ -56,6 +57,10 @@ Namespace TopStepTrader.API.Http
             Dim content = New StringContent(json, Encoding.UTF8, "application/json")
 
             Logger.LogDebug("POST {Endpoint} → {Body}", endpoint, json)
+            Try
+                DebugLog.Log($"POST {endpoint} → {json}")
+            Catch
+            End Try
 
             Dim httpResponse = Await HttpClient.PostAsync(endpoint, content, cancel)
 
@@ -70,6 +75,10 @@ Namespace TopStepTrader.API.Http
 
             Dim responseJson = Await httpResponse.Content.ReadAsStringAsync(cancel)
             Logger.LogDebug("Response from {Endpoint} ← {Body}", endpoint, responseJson)
+            Try
+                DebugLog.Log($"Response {endpoint} ← {responseJson}")
+            Catch
+            End Try
 
             Dim result = JsonSerializer.Deserialize(Of TResponse)(responseJson, JsonOptions)
             If result Is Nothing Then

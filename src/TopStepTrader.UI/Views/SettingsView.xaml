@@ -7,7 +7,7 @@
              Background="{StaticResource BackgroundBrush}">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid Margin="24,20" MaxWidth="680" HorizontalAlignment="Left">
+        <Grid Margin="24,20" MaxWidth="900" HorizontalAlignment="Left">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="16"/>
@@ -22,96 +22,8 @@
 
             <TextBlock Grid.Row="0" Text="⚙️  Settings" Style="{StaticResource PageTitleStyle}"/>
 
-            <!-- API Connection -->
-            <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}"
-                    CornerRadius="6" Padding="20,16">
-                <StackPanel>
-                    <TextBlock Text="API CONNECTION" Style="{StaticResource SectionHeadingStyle}"/>
-
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,4">
-                        <TextBlock Text="Status: " Foreground="{StaticResource TextSecondaryBrush}" Width="120"/>
-                        <TextBlock Text="{Binding ConnectionStatusText}"
-                                   Foreground="{Binding ConnectionStatusColor, Converter={StaticResource BrushKeyConverter}}"
-                                   FontWeight="SemiBold"/>
-                    </StackPanel>
-
-                    <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
-                        <TextBlock Text="API Endpoint: " Foreground="{StaticResource TextSecondaryBrush}" Width="120"/>
-                        <TextBlock Text="{Binding ApiBaseUrl}" Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontFamily="Consolas" FontSize="11"/>
-                    </StackPanel>
-
-                    <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
-                        <TextBlock Text="Token Expires: " Foreground="{StaticResource TextSecondaryBrush}" Width="120"/>
-                        <TextBlock Text="{Binding TokenExpiresAt}" Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontFamily="Consolas" FontSize="11"/>
-                    </StackPanel>
-
-                    <Button Content="Reconnect / Refresh Token"
-                            Command="{Binding ConnectCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}"
-                            HorizontalAlignment="Left"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Risk Settings -->
-            <Border Grid.Row="4" Background="{StaticResource SurfaceBrush}"
-                    CornerRadius="6" Padding="20,16">
-                <StackPanel>
-                    <TextBlock Text="RISK GUARD SETTINGS" Style="{StaticResource SectionHeadingStyle}"/>
-                    <TextBlock Text="Changes apply immediately for the current session. Edit appsettings.json for persistence."
-                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"
-                               TextWrapping="Wrap" Margin="0,0,0,12"/>
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="200"/>
-                            <ColumnDefinition Width="160"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="10"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="10"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="10"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Daily Loss Limit ($):"
-                                   VerticalAlignment="Center"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
-                        <TextBox Grid.Row="0" Grid.Column="1"
-                                 Text="{Binding DailyLossLimit, UpdateSourceTrigger=PropertyChanged}"/>
-
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Max Drawdown ($):"
-                                   VerticalAlignment="Center"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
-                        <TextBox Grid.Row="2" Grid.Column="1"
-                                 Text="{Binding MaxDrawdown, UpdateSourceTrigger=PropertyChanged}"/>
-
-                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Max Position (contracts):"
-                                   VerticalAlignment="Center"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
-                        <TextBox Grid.Row="4" Grid.Column="1"
-                                 Text="{Binding MaxPosition, UpdateSourceTrigger=PropertyChanged}"/>
-
-                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Min Signal Confidence (0-1):"
-                                   VerticalAlignment="Center"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
-                        <TextBox Grid.Row="6" Grid.Column="1"
-                                 Text="{Binding MinConfidence, UpdateSourceTrigger=PropertyChanged}"/>
-                    </Grid>
-
-                    <Button Content="Apply Risk Settings"
-                            Command="{Binding ApplyRiskCommand}"
-                            Style="{StaticResource PrimaryButtonStyle}"
-                            HorizontalAlignment="Left" Margin="0,16,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Auto-Execution -->
-            <Border Grid.Row="6"
+            <!-- Auto-Execution (Moved to TOP) -->
+            <Border Grid.Row="2"
                     Background="{StaticResource SurfaceBrush}"
                     CornerRadius="6" Padding="20,16"
                     BorderBrush="{StaticResource HaltedBrush}"
@@ -126,6 +38,75 @@
                               IsChecked="{Binding AutoExecutionEnabled}"
                               Foreground="{StaticResource HaltedBrush}"
                               FontWeight="SemiBold" FontSize="14"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Risk Settings (Condensed to ONE LINE) -->
+            <Border Grid.Row="4" Background="{StaticResource SurfaceBrush}"
+                    CornerRadius="6" Padding="20,16">
+                <StackPanel>
+                    <TextBlock Text="RISK GUARD SETTINGS" Style="{StaticResource SectionHeadingStyle}"/>
+                    <TextBlock Text="Changes apply immediately for the current session. Edit appsettings.json for persistence."
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"
+                               TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+                    <!-- Single row with three fields -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
+                        <!-- Daily Loss Limit -->
+                        <StackPanel Width="200" Margin="0,0,16,0">
+                            <TextBlock Text="Daily Loss Limit ($):"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="11" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding DailyLossLimit, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="32"/>
+                        </StackPanel>
+
+                        <!-- Max Position -->
+                        <StackPanel Width="200" Margin="0,0,16,0">
+                            <TextBlock Text="Max Position (contracts):"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="11" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding MaxPosition, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="32"/>
+                        </StackPanel>
+
+                        <!-- Min Signal Confidence -->
+                        <StackPanel Width="200" Margin="0,0,16,0">
+                            <TextBlock Text="Min Signal Confidence (0-1):"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="11" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding MinConfidence, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="32"/>
+                        </StackPanel>
+
+                        <!-- Apply Button (inline) -->
+                        <StackPanel VerticalAlignment="Bottom">
+                            <Button Content="Apply"
+                                    Command="{Binding ApplyRiskCommand}"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    Padding="20,8"
+                                    Height="32"/>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- API Status (MOVED TO BOTTOM - Condensed) -->
+            <Border Grid.Row="6" Background="{StaticResource SurfaceBrush}"
+                    CornerRadius="6" Padding="20,12">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="API Status:" Foreground="{StaticResource TextSecondaryBrush}" Width="100" Margin="0,0,16,0"/>
+                        <TextBlock Text="{Binding ConnectionStatusText}"
+                                   Foreground="{Binding ConnectionStatusColor, Converter={StaticResource BrushKeyConverter}}"
+                                   FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                        <Button Content="Reconnect / Refresh Token"
+                                Command="{Binding ConnectCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="12,4"
+                                FontSize="11"
+                                Height="28"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 

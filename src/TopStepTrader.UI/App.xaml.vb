@@ -1,6 +1,7 @@
+Imports System.Windows
 Imports Microsoft.Extensions.DependencyInjection
 Imports Microsoft.Extensions.Hosting
-Imports System.Windows
+Imports TopStepTrader.API.Hubs
 Imports TopStepTrader.UI.Infrastructure
 
 Namespace TopStepTrader.UI
@@ -15,6 +16,20 @@ Namespace TopStepTrader.UI
 
             _host = AppBootstrapper.BuildHost()
             Await _host.StartAsync()
+
+            ' ── Start SignalR hub connections ──────────────────────────────
+            ' UserHub  : order fills, position updates (needed for bracket placement)
+            ' MarketHub: live quotes (needed for P&L and price-based logic)
+            Try
+                Await _host.Services.GetRequiredService(Of UserHubClient)().StartAsync()
+            Catch ex As Exception
+                System.Diagnostics.Debug.WriteLine($"UserHub startup warning: {ex.Message}")
+            End Try
+            Try
+                Await _host.Services.GetRequiredService(Of MarketHubClient)().StartAsync()
+            Catch ex As Exception
+                System.Diagnostics.Debug.WriteLine($"MarketHub startup warning: {ex.Message}")
+            End Try
 
             ' Initialise ML model manager (loads model file + starts file watcher)
             AppBootstrapper.InitialiseServices(_host)

@@ -19,19 +19,19 @@ Namespace TopStepTrader.Services.Background
         Implements IHostedService, IDisposable
 
         Private ReadOnly _scopeFactory As IServiceScopeFactory
-        Private ReadOnly _logger       As ILogger(Of OutcomeMonitorWorker)
-        Private _timer    As System.Threading.Timer
+        Private ReadOnly _logger As ILogger(Of OutcomeMonitorWorker)
+        Private _timer As System.Threading.Timer
         Private _disposed As Boolean = False
 
         ' Retrain when rolling win-rate drops below this threshold
-        Private Const MinWinRateThreshold  As Single  = 0.45F
+        Private Const MinWinRateThreshold As Single = 0.45F
         ' Don't retrain until we have at least this many outcomes
         Private Const MinOutcomesForRetrain As Integer = 20
 
         Public Sub New(scopeFactory As IServiceScopeFactory,
                        logger As ILogger(Of OutcomeMonitorWorker))
             _scopeFactory = scopeFactory
-            _logger       = logger
+            _logger = logger
         End Sub
 
         Public Function StartAsync(cancel As CancellationToken) As Task _
@@ -52,7 +52,7 @@ Namespace TopStepTrader.Services.Background
             Dim cts = New CancellationTokenSource(TimeSpan.FromMinutes(4))
             Try
                 Using scope = _scopeFactory.CreateScope()
-                    Dim outcomeTracker  = scope.ServiceProvider.GetRequiredService(Of OutcomeTracker)()
+                    Dim outcomeTracker = scope.ServiceProvider.GetRequiredService(Of OutcomeTracker)()
                     Dim trainingService = scope.ServiceProvider.GetRequiredService(Of IModelTrainingService)()
 
                     ' Step 1: Resolve any open outcomes whose exit window has passed

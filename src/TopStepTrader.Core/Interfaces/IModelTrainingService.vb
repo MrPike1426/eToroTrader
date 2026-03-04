@@ -7,8 +7,14 @@ Namespace TopStepTrader.Core.Interfaces
     ''' Service for triggering model retraining and querying the feedback loop metrics.
     ''' </summary>
     Public Interface IModelTrainingService
-        ''' <summary>Retrain the ML model using bar history + real trade outcomes from the DB.</summary>
-        Function RetrainAsync(cancel As CancellationToken) As Task(Of ModelMetrics)
+        ''' <summary>
+        ''' Retrain the ML model using bar history + real trade outcomes from the DB.
+        ''' When <paramref name="contractId"/> is supplied the training fetches bars only for
+        ''' that contract (backtest context); otherwise falls back to
+        ''' TradingSettings.ActiveContractIds (live-trading default).
+        ''' </summary>
+        Function RetrainAsync(cancel As CancellationToken,
+                              Optional contractId As String = Nothing) As Task(Of ModelMetrics)
 
         ''' <summary>Rolling win-rate of the last <paramref name="windowSize"/> resolved outcomes.</summary>
         Function GetRollingWinRateAsync(Optional windowSize As Integer = 50) As Task(Of Single)

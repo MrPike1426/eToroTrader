@@ -46,8 +46,20 @@ Namespace TopStepTrader.UI
                     MainContent.Content = _viewModelLocator.OrderBookView
                 Case "Risk"
                     MainContent.Content = _viewModelLocator.RiskGuardView
+                Case "TestTrade"
+                    MainContent.Content = _viewModelLocator.TestTradeView
+                Case "AiTrading"
+                    Dim aiView = _viewModelLocator.AiTradingView
+                    Dim dashVm = TryCast(_viewModelLocator.DashboardView.DataContext, DashboardViewModel)
+                    Dim aiVm = TryCast(aiView.DataContext, AiTradingViewModel)
+                    If dashVm?.SelectedAccount IsNot Nothing AndAlso aiVm IsNot Nothing Then
+                        aiVm.SyncDashboardAccount(dashVm.SelectedAccount)
+                    End If
+                    MainContent.Content = aiView
                 Case "Backtest"
                     MainContent.Content = _viewModelLocator.BacktestView
+                Case "Sniper"
+                    MainContent.Content = _viewModelLocator.SniperView
                 Case "Settings"
                     MainContent.Content = _viewModelLocator.SettingsView
             End Select

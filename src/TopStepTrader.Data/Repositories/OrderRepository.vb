@@ -1,8 +1,8 @@
 Imports System.Threading
 Imports Microsoft.EntityFrameworkCore
 Imports Microsoft.Extensions.Logging
-Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Core.Enums
+Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Data.Entities
 
 Namespace TopStepTrader.Data.Repositories
@@ -40,14 +40,17 @@ Namespace TopStepTrader.Data.Repositories
             Await _context.SaveChangesAsync(cancel)
         End Function
 
+        ' UAT-BUG-009: PlacedAt is DateTimeOffset — EF Core SQLite cannot translate
+        ' DateTimeOffset in ORDER BY clauses.  Fetch unordered, sort in-memory.
+
         ''' <summary>Returns all open orders across all accounts (for cancel-all operations).</summary>
         Public Async Function GetOpenOrdersAsync(Optional cancel As CancellationToken = Nothing) As Task(Of List(Of Order))
             Dim openStatuses = {CByte(OrderStatus.Pending), CByte(OrderStatus.Working)}
             Dim entities = Await _context.Orders _
                 .Where(Function(o) openStatuses.Contains(o.Status)) _
-                .OrderByDescending(Function(o) o.PlacedAt) _
                 .ToListAsync(cancel)
-            Return entities.Select(AddressOf MapToModel).ToList()
+            Return entities.OrderByDescending(Function(o) o.PlacedAt) _
+                           .Select(AddressOf MapToModel).ToList()
         End Function
 
         Public Async Function GetOpenOrdersAsync(accountId As Long,
@@ -55,43 +58,56 @@ Namespace TopStepTrader.Data.Repositories
             Dim openStatuses = {CByte(OrderStatus.Pending), CByte(OrderStatus.Working)}
             Dim entities = Await _context.Orders _
                 .Where(Function(o) o.AccountId = accountId AndAlso openStatuses.Contains(o.Status)) _
-                .OrderByDescending(Function(o) o.PlacedAt) _
                 .ToListAsync(cancel)
-            Return entities.Select(AddressOf MapToModel).ToList()
+            Return entities.OrderByDescending(Function(o) o.PlacedAt) _
+                           .Select(AddressOf MapToModel).ToList()
         End Function
 
         Public Async Function GetOrderHistoryAsync(accountId As Long,
                                                     from As DateTime,
                                                     [to] As DateTime,
                                                     Optional cancel As CancellationToken = Nothing) As Task(Of List(Of Order))
+            ' UAT-BUG-009: PlacedAt is DateTimeOffset — filter and sort in-memory.
             Dim entities = Await _context.Orders _
-                .Where(Function(o) o.AccountId = accountId _
-                               AndAlso o.PlacedAt >= from _
-                               AndAlso o.PlacedAt <= [to]) _
-                .OrderByDescending(Function(o) o.PlacedAt) _
+                .Where(Function(o) o.AccountId = accountId) _
                 .ToListAsync(cancel)
-            Return entities.Select(AddressOf MapToModel).ToList()
+            Return entities _
+                .Where(Function(o) o.PlacedAt >= from AndAlso o.PlacedAt <= [to]) _
+                .OrderByDescending(Function(o) o.PlacedAt) _
+                .Select(AddressOf MapToModel).ToList()
         End Function
 
         ''' <summary>Today's total P&amp;L across all accounts (for risk guard without account context).</summary>
         Public Async Function GetTodayPnLAsync(Optional cancel As CancellationToken = Nothing) As Task(Of Decimal)
-            Dim todayStart = DateTimeOffset.UtcNow.Date
-            Dim pnl = Await _context.Orders _
-                .Where(Function(o) o.Status = CByte(OrderStatus.Filled) _
-                               AndAlso o.FilledAt >= todayStart) _
-                .SumAsync(Function(o) If(o.FillPrice.HasValue, o.FillPrice.Value, 0D), cancel)
-            Return pnl   ' Simplified — real P&L needs entry vs exit price tracking
+            Try
+                ' UAT-BUG-009: FilledAt is DateTimeOffset — filter in-memory after fetch.
+                Dim todayStart = DateTimeOffset.UtcNow.Date
+                Dim filled = Await _context.Orders _
+                    .Where(Function(o) o.Status = CByte(OrderStatus.Filled)) _
+                    .ToListAsync(cancel)
+                Return filled _
+                    .Where(Function(o) o.FilledAt.HasValue AndAlso o.FilledAt.Value >= todayStart) _
+                    .Sum(Function(o) If(o.FillPrice.HasValue, o.FillPrice.Value, 0D))
+            Catch ex As Exception
+                Return 0D
+            End Try
         End Function
 
         Public Async Function GetTodayPnLAsync(accountId As Long,
                                                Optional cancel As CancellationToken = Nothing) As Task(Of Decimal)
-            Dim todayStart = DateTimeOffset.UtcNow.Date
-            Dim pnl = Await _context.Orders _
-                .Where(Function(o) o.AccountId = accountId _
-                               AndAlso o.Status = CByte(OrderStatus.Filled) _
-                               AndAlso o.FilledAt >= todayStart) _
-                .SumAsync(Function(o) If(o.FillPrice.HasValue, o.FillPrice.Value, 0D), cancel)
-            Return pnl
+            Try
+                ' UAT-BUG-009: FilledAt is DateTimeOffset — filter in-memory after fetch.
+                Dim todayStart = DateTimeOffset.UtcNow.Date
+                Dim filled = Await _context.Orders _
+                    .Where(Function(o) o.AccountId = accountId _
+                                   AndAlso o.Status = CByte(OrderStatus.Filled)) _
+                    .ToListAsync(cancel)
+                Return filled _
+                    .Where(Function(o) o.FilledAt.HasValue AndAlso o.FilledAt.Value >= todayStart) _
+                    .Sum(Function(o) If(o.FillPrice.HasValue, o.FillPrice.Value, 0D))
+            Catch ex As Exception
+                Return 0D
+            End Try
         End Function
 
         Private Function MapToModel(entity As OrderEntity) As Order

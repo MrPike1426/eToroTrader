@@ -1,8 +1,7 @@
-Imports System.Threading
 Imports Microsoft.Extensions.Logging
+Imports TopStepTrader.API.Http
 Imports TopStepTrader.Core.Interfaces
 Imports TopStepTrader.Core.Models
-Imports TopStepTrader.API.Http
 
 Namespace TopStepTrader.Services.Market
 

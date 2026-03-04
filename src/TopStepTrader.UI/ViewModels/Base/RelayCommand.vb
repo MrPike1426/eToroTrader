@@ -9,7 +9,7 @@ Namespace TopStepTrader.UI.ViewModels.Base
     Public Class RelayCommand
         Implements ICommand
 
-        Private ReadOnly _execute    As Action(Of Object)
+        Private ReadOnly _execute As Action(Of Object)
         Private ReadOnly _canExecute As Func(Of Object, Boolean)
 
         Public Sub New(execute As Action(Of Object),
@@ -60,7 +60,7 @@ Namespace TopStepTrader.UI.ViewModels.Base
     Public Class RelayCommand(Of T)
         Implements ICommand
 
-        Private ReadOnly _execute    As Action(Of T)
+        Private ReadOnly _execute As Action(Of T)
         Private ReadOnly _canExecute As Func(Of T, Boolean)
 
         Public Sub New(execute As Action(Of T),

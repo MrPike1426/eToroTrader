@@ -1,7 +1,6 @@
 Imports System.Globalization
 Imports System.Windows
 Imports System.Windows.Data
-Imports System.Windows.Media
 
 Namespace TopStepTrader.UI.Infrastructure
 
@@ -16,10 +15,14 @@ Namespace TopStepTrader.UI.Infrastructure
         Public Function Convert(value As Object, targetType As Type,
                                 parameter As Object, culture As CultureInfo) As Object _
             Implements IValueConverter.Convert
-            If value Is Nothing Then Return Brushes.Transparent
-            Dim key = value.ToString()
-            Dim brush = Application.Current?.TryFindResource(key)
-            Return If(TypeOf brush Is Brush, CType(brush, Brush), Brushes.Transparent)
+            Dim key = TryCast(value, String)
+            If String.IsNullOrEmpty(key) Then Return Nothing
+            Dim app = Application.Current
+            If app Is Nothing Then Return Nothing
+            If app.Resources.Contains(key) Then
+                Return app.Resources(key)
+            End If
+            Return Nothing
         End Function
 
         Public Function ConvertBack(value As Object, targetType As Type,
@@ -38,16 +41,15 @@ Namespace TopStepTrader.UI.Infrastructure
         Public Function Convert(value As Object, targetType As Type,
                                 parameter As Object, culture As CultureInfo) As Object _
             Implements IValueConverter.Convert
-            If TypeOf value Is Boolean Then
-                Return If(CBool(value), Visibility.Visible, Visibility.Collapsed)
-            End If
-            Return Visibility.Collapsed
+            Dim b = False
+            If TypeOf value Is Boolean Then b = CType(value, Boolean)
+            Return If(b, Visibility.Visible, Visibility.Collapsed)
         End Function
 
         Public Function ConvertBack(value As Object, targetType As Type,
                                     parameter As Object, culture As CultureInfo) As Object _
             Implements IValueConverter.ConvertBack
-            Return Equals(value, Visibility.Visible)
+            Throw New NotSupportedException()
         End Function
     End Class
 
@@ -61,10 +63,9 @@ Namespace TopStepTrader.UI.Infrastructure
         Public Function Convert(value As Object, targetType As Type,
                                 parameter As Object, culture As CultureInfo) As Object _
             Implements IValueConverter.Convert
-            If TypeOf value Is Boolean AndAlso CBool(value) Then
-                Return New Thickness(2)
-            End If
-            Return New Thickness(0)
+            Dim b = False
+            If TypeOf value Is Boolean Then b = CType(value, Boolean)
+            Return If(b, New Thickness(2), New Thickness(1))
         End Function
 
         Public Function ConvertBack(value As Object, targetType As Type,

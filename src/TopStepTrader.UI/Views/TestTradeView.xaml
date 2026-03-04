@@ -1,0 +1,133 @@
+<UserControl x:Class="TopStepTrader.UI.Views.TestTradeView"
+             xmlns:controls="clr-namespace:TopStepTrader.UI.Controls"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="{StaticResource BackgroundBrush}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" ClipToBounds="False">
+        <StackPanel Margin="24,20">
+            <TextBlock Text="🎯  Test Trade — Automated Strategy" Style="{StaticResource PageTitleStyle}"/>
+            <TextBlock Text="Automatic entry on 3-bar trend (5s) with active trade management (30s interval)."
+                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,4,0,20"/>
+
+            <!-- Settings Panel -->
+            <Border Background="{StaticResource SurfaceBrush}" CornerRadius="6" Padding="20,16" Margin="0,0,0,20">
+                <StackPanel>
+                    <!-- Row 1: Account & Contract -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="200"/>
+                            <ColumnDefinition Width="20"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="220"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" Text="Account:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,10,0"/>
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount}"
+                                  FontSize="14" Style="{StaticResource UnclippedComboBoxStyle}" ItemContainerStyle="{StaticResource DarkComboBoxItemStyle}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" Foreground="White"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <TextBlock Grid.Column="3" Text="Contract:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,10,0"/>
+                        <controls:ContractSelectorControl Grid.Column="4" ContractId="{Binding TestTradeContractId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                    </Grid>
+
+                    <!-- Row 2: Parameters -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="60"/>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="60"/>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="60"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" Text="Qty:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="1" Text="{Binding TestTradeQuantity, UpdateSourceTrigger=PropertyChanged}"/>
+
+                        <TextBlock Grid.Column="3" Text="Risk (SL ticks):" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="4" Text="{Binding TestTradeStopLoss, UpdateSourceTrigger=PropertyChanged}"/>
+
+                        <TextBlock Grid.Column="6" Text="Gain (TP ticks):" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="7" Text="{Binding TestTradeTakeProfit, UpdateSourceTrigger=PropertyChanged}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Action Buttons -->
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0" Content="BUY 1 SIZE" Command="{Binding StartStrategyBuyCommand}"
+                        Style="{StaticResource PrimaryButtonStyle}" Background="#2E8B57" Height="50" FontSize="16"/>
+
+                <Button Grid.Column="2" Content="SELL 1 SIZE" Command="{Binding StartStrategySellCommand}"
+                        Style="{StaticResource PrimaryButtonStyle}" Background="#DC143C" Height="50" FontSize="16"/>
+
+                <Button Grid.Column="4" Content="STOP STRATEGY" Command="{Binding StopStrategyCommand}"
+                        Style="{StaticResource PrimaryButtonStyle}" Background="#B22222" Height="50" FontSize="16"/>
+            </Grid>
+
+            <!-- Manual Order Tests -->
+            <Grid Margin="0,0,0,20">
+                <Button Content="Create Bracket" Command="{Binding CreateBracketCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}" Height="40" HorizontalAlignment="Stretch"/>
+            </Grid>
+
+            <!-- P&L Results Panel -->
+            <Border Background="{StaticResource SurfaceBrush}" CornerRadius="6" Padding="20,16" Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="LIVE P&amp;L" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,8"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Current P&amp;L:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,20,0"/>
+                        <TextBlock Grid.Column="1" Text="{Binding CurrentPnLText, Mode=OneWay}" VerticalAlignment="Center" 
+                                   FontSize="28" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                    </Grid>
+                    <TextBlock Text="Updates every 5 seconds • Format: Entry Price vs Current Market Price × Point Value" 
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Status / Logs -->
+            <StackPanel>
+                <TextBlock Text="STATUS LOG" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,8"/>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBox Grid.Row="0" Text="{Binding DebugText, Mode=OneWay}" IsReadOnly="True" Height="200"
+                             VerticalScrollBarVisibility="Auto" Background="{StaticResource CardBrush}" Foreground="{StaticResource TextPrimaryBrush}"
+                             FontFamily="Consolas" BorderThickness="0" Padding="8"/>
+
+                    <Button Grid.Row="1" Content="Clear Log" Command="{Binding ClearDebugCommand}"
+                            HorizontalAlignment="Right" Margin="0,8,0,0" Style="{StaticResource SecondaryButtonStyle}" Width="100"/>
+                </Grid>
+                <!-- Status Line -->
+                <TextBlock Text="{Binding TestTradeStatus}" Foreground="{StaticResource AccentBrush}" FontSize="13" Margin="0,8,0,0"/>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

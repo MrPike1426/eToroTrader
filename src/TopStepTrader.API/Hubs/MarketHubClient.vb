@@ -2,8 +2,8 @@ Imports System.Threading
 Imports Microsoft.AspNetCore.SignalR.Client
 Imports Microsoft.Extensions.Logging
 Imports Microsoft.Extensions.Options
-Imports TopStepTrader.Core.Settings
 Imports TopStepTrader.Core.Models
+Imports TopStepTrader.Core.Settings
 
 Namespace TopStepTrader.API.Hubs
 
@@ -43,8 +43,8 @@ Namespace TopStepTrader.API.Hubs
                 .WithUrl(_settings.MarketHubUrl,
                          Sub(opts)
                              opts.AccessTokenProvider = Function()
-                                 Return _tokenManager.GetValidTokenAsync()
-                             End Function
+                                                            Return _tokenManager.GetValidTokenAsync()
+                                                        End Function
                          End Sub) _
                 .WithAutomaticReconnect(New TimeSpan() {
                     TimeSpan.Zero,
@@ -98,6 +98,9 @@ Namespace TopStepTrader.API.Hubs
 
         Public Async Function SubscribeContractAsync(contractId As String,
                                                       Optional cancel As CancellationToken = Nothing) As Task
+            If _connection Is Nothing Then
+                Await StartAsync(cancel)
+            End If
             If _subscribedContracts.Contains(contractId) Then Return
             Await ResubscribeAsync(contractId, cancel)
             _subscribedContracts.Add(contractId)

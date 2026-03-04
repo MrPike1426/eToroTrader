@@ -18,6 +18,7 @@ Namespace TopStepTrader.Core.Models
         Public Property FillPrice As Decimal?
         Public Property SourceSignalId As Long?
         Public Property Notes As String = String.Empty
+        Public Property OcoBracketName As String = String.Empty
     End Class
 
 End Namespace

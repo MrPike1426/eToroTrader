@@ -1,10 +1,9 @@
 Imports System.Collections.Concurrent
-Imports System.Threading
 Imports Microsoft.Extensions.Logging
+Imports TopStepTrader.API.Hubs
 Imports TopStepTrader.Core.Events
 Imports TopStepTrader.Core.Interfaces
 Imports TopStepTrader.Core.Models
-Imports TopStepTrader.API.Hubs
 
 Namespace TopStepTrader.Services.Market
 

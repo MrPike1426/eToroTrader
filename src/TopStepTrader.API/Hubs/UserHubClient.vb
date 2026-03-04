@@ -42,8 +42,8 @@ Namespace TopStepTrader.API.Hubs
                 .WithUrl(_settings.UserHubUrl,
                          Sub(opts)
                              opts.AccessTokenProvider = Function()
-                                 Return _tokenManager.GetValidTokenAsync()
-                             End Function
+                                                            Return _tokenManager.GetValidTokenAsync()
+                                                        End Function
                          End Sub) _
                 .WithAutomaticReconnect(New TimeSpan() {
                     TimeSpan.Zero,

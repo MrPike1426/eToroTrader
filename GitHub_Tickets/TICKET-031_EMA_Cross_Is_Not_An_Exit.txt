@@ -1,0 +1,109 @@
+# TICKET-031: EMA Cross Is Not an Exit – Add Structure-Fail Exit Logic
+
+**Status:** Backlog  
+**Priority:** Medium  
+**Severity:** Medium  
+**Assigned To:** Claude Sonnet 4.6  
+**StartDate:** (unscheduled)  
+**Due Date:** 29/03/2026  
+**TokenEstimate:** 9  
+**Labels:** `feature,trade-management,trend-integrity,ema,exits`
+
+---
+
+## Problem Statement
+
+The strategy currently treats an opposing EMA(8/21) cross as a **momentum failure signal**, but not as an explicit exit condition.  
+While this avoids overreacting to noise, it also creates an ambiguity:
+
+- EMA crosses are **lagging indicators**, especially on 1‑minute charts.
+- Momentum can fail structurally (rotation, absorption, distribution) **before** EMAs cross.
+- Conversely, EMAs may briefly cross during normal pullbacks without invalidating the trend.
+
+As a result:
+- Positions can remain open during clear structure failure,
+- Or risk logic becomes implicitly dependent on EMA behavior rather than price action.
+
+EMA crosses should be treated as **informational context**, not as direct exit triggers.
+
+---
+
+## Desired Outcome
+
+- Decouple trade exits from raw EMA cross events.
+- Introduce **explicit structure‑fail exit conditions** based on price behavior.
+- Preserve the existing rule that EMA cross blocks **new scale‑ins**, but does not force exits.
+- Make exit behavior deterministic, explainable, and testable.
+
+---
+
+## Requirements
+
+### 1. EMA Cross Reclassification
+- EMA(8/21) cross against the position:
+  - **Must NOT** trigger an exit.
+  - **Must** continue to block new scale‑ins (existing behavior preserved).
+- EMA cross is treated as **context only**, not execution logic.
+
+### 2. Structure-Fail Exit Conditions
+Define explicit structure-failure signals that may trigger an exit (configurable):
+
+Examples (choose one or more, defaults defined below):
+- Close beyond EMA(21) by > X ticks.
+- Break of last impulse low (long) or high (short).
+- Consecutive closes against trend with declining momentum.
+- Price acceptance back inside a defined range after breakout.
+
+Default behavior:
+- Structure-fail exits flatten **remaining position** (market or stop logic as appropriate).
+
+### 3. Integration with Existing Risk Systems
+- Structure-fail logic runs **after**:
+  - Decoupled stop logic (TICKET‑027),
+  - Tiered pyramiding (TICKET‑028),
+  - Heat budget enforcement (TICKET‑029),
+  - Give‑back governor (TICKET‑030).
+- Structure-fail exit must never:
+  - Increase risk,
+  - Re-enter automatically,
+  - Override a tighter stop already in place.
+
+### 4. Configuration Parameters (with defaults)
+- `EnableStructureFailExit = true`
+- `StructureFailMode = EMA21Break | ImpulseBreak`
+- `EMA21BreakTicks = X`
+- `MinBarsInTradeBeforeStructureCheck = N`
+
+### 5. Logging & Diagnostics
+Log when structure-fail logic triggers:
+- Active structure-fail condition
+- Price and EMA values
+- Position size at exit
+- Whether exit was partial or full
+
+---
+
+## Acceptance Criteria
+
+- [ ] EMA cross alone never exits a trade.
+- [ ] EMA cross continues to block new scale‑ins.
+- [ ] Structure‑fail condition exits the trade deterministically.
+- [ ] No interaction conflicts with existing stop or governor logic.
+- [ ] Build passes with 0 errors and 0 warnings.
+
+---
+
+## Notes
+
+- This ticket intentionally avoids:
+  - Stop‑loss tuning,
+  - Trailing logic,
+  - Profit‑protection logic.
+- EMA remains a **trend filter**, not an execution signal.
+- Goal is clarity: exits should reflect **price invalidation**, not indicator lag.
+
+---
+
+## Progress Tracking
+
+### Phase 1: Design

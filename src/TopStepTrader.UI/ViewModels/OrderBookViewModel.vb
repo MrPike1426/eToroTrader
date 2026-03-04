@@ -14,14 +14,14 @@ Namespace TopStepTrader.UI.ViewModels
     Public Class OrderBookViewModel
         Inherits ViewModelBase
 
-        Private ReadOnly _orderService   As IOrderService
+        Private ReadOnly _orderService As IOrderService
         Private ReadOnly _accountService As IAccountService
 
         Private _accountId As Long = 0
 
         ' ── Bindable properties ──────────────────────────────────────────────
 
-        Public ReadOnly Property OpenOrders   As New ObservableCollection(Of OrderRowVm)()
+        Public ReadOnly Property OpenOrders As New ObservableCollection(Of OrderRowVm)()
         Public ReadOnly Property FilledOrders As New ObservableCollection(Of OrderRowVm)()
 
         Private _selectedOrder As OrderRowVm
@@ -79,24 +79,24 @@ Namespace TopStepTrader.UI.ViewModels
 
         ' ── Commands ─────────────────────────────────────────────────────────
 
-        Public ReadOnly Property PlaceBuyCommand    As RelayCommand
-        Public ReadOnly Property PlaceSellCommand   As RelayCommand
+        Public ReadOnly Property PlaceBuyCommand As RelayCommand
+        Public ReadOnly Property PlaceSellCommand As RelayCommand
         Public ReadOnly Property CancelOrderCommand As RelayCommand
-        Public ReadOnly Property RefreshCommand     As RelayCommand
+        Public ReadOnly Property RefreshCommand As RelayCommand
 
         ' ── Constructor ──────────────────────────────────────────────────────
 
         Public Sub New(orderService As IOrderService, accountService As IAccountService)
-            _orderService   = orderService
+            _orderService = orderService
             _accountService = accountService
 
-            PlaceBuyCommand    = New RelayCommand(Sub() ExecutePlaceOrder(OrderSide.Buy))
-            PlaceSellCommand   = New RelayCommand(Sub() ExecutePlaceOrder(OrderSide.Sell))
+            PlaceBuyCommand = New RelayCommand(Sub() ExecutePlaceOrder(OrderSide.Buy))
+            PlaceSellCommand = New RelayCommand(Sub() ExecutePlaceOrder(OrderSide.Sell))
             CancelOrderCommand = New RelayCommand(AddressOf ExecuteCancelOrder,
                                                   Function() _selectedOrder IsNot Nothing)
-            RefreshCommand     = New RelayCommand(AddressOf LoadOrders)
+            RefreshCommand = New RelayCommand(AddressOf LoadOrders)
 
-            AddHandler _orderService.OrderFilled,   AddressOf OnOrderFilled
+            AddHandler _orderService.OrderFilled, AddressOf OnOrderFilled
             AddHandler _orderService.OrderRejected, AddressOf OnOrderRejected
         End Sub
 
@@ -150,13 +150,13 @@ Namespace TopStepTrader.UI.ViewModels
             End If
 
             Dim order As New Order With {
-                .AccountId  = _accountId,
+                .AccountId = _accountId,
                 .ContractId = contractId,
-                .Side       = side,
-                .OrderType  = OrderType.Market,
-                .Quantity   = qty,
-                .Status     = OrderStatus.Pending,
-                .PlacedAt   = DateTimeOffset.UtcNow
+                .Side = side,
+                .OrderType = OrderType.Market,
+                .Quantity = qty,
+                .Status = OrderStatus.Pending,
+                .PlacedAt = DateTimeOffset.UtcNow
             }
 
             Task.Run(Async Function()
@@ -210,15 +210,15 @@ Namespace TopStepTrader.UI.ViewModels
 
     ''' <summary>View-friendly wrapper around Order.</summary>
     Public Class OrderRowVm
-        Public Property OrderId    As Long
+        Public Property OrderId As Long
         Public Property ContractId As String
-        Public Property Side       As String
-        Public Property Qty        As Integer
-        Public Property Status     As String
-        Public Property Price      As String
-        Public Property PlacedAt   As String
-        Public Property FilledAt   As String
-        Public Property FillPrice  As String
+        Public Property Side As String
+        Public Property Qty As Integer
+        Public Property Status As String
+        Public Property Price As String
+        Public Property PlacedAt As String
+        Public Property FilledAt As String
+        Public Property FillPrice As String
 
         Public ReadOnly Property SideColor As String
             Get
@@ -227,15 +227,15 @@ Namespace TopStepTrader.UI.ViewModels
         End Property
 
         Public Sub New(o As Order)
-            OrderId    = o.Id
+            OrderId = o.Id
             ContractId = o.ContractId
-            Side       = o.Side.ToString()
-            Qty        = o.Quantity
-            Status     = o.Status.ToString()
-            Price      = If(o.LimitPrice.HasValue, o.LimitPrice.Value.ToString("F2"), "Market")
-            PlacedAt   = o.PlacedAt.LocalDateTime.ToString("HH:mm:ss")
-            FilledAt   = If(o.FilledAt.HasValue, o.FilledAt.Value.LocalDateTime.ToString("HH:mm:ss"), "—")
-            FillPrice  = If(o.FillPrice.HasValue, o.FillPrice.Value.ToString("F2"), "—")
+            Side = o.Side.ToString()
+            Qty = o.Quantity
+            Status = o.Status.ToString()
+            Price = If(o.LimitPrice.HasValue, o.LimitPrice.Value.ToString("F2"), "Market")
+            PlacedAt = o.PlacedAt.LocalDateTime.ToString("HH:mm:ss")
+            FilledAt = If(o.FilledAt.HasValue, o.FilledAt.Value.LocalDateTime.ToString("HH:mm:ss"), "—")
+            FillPrice = If(o.FillPrice.HasValue, o.FillPrice.Value.ToString("F2"), "—")
         End Sub
     End Class
 

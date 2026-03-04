@@ -1,4 +1,3 @@
-Imports System.Threading
 Imports Microsoft.Extensions.Logging
 Imports TopStepTrader.Core.Enums
 Imports TopStepTrader.Core.Events

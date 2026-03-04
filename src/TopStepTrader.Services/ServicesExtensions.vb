@@ -1,11 +1,10 @@
 Imports Microsoft.Extensions.DependencyInjection
-Imports Microsoft.Extensions.Hosting
 Imports TopStepTrader.Core.Interfaces
-Imports TopStepTrader.Core.Settings
 Imports TopStepTrader.Data.Repositories
+Imports TopStepTrader.Services.AI
 Imports TopStepTrader.Services.Auth
-Imports TopStepTrader.Services.Backtest
 Imports TopStepTrader.Services.Background
+Imports TopStepTrader.Services.Backtest
 Imports TopStepTrader.Services.Feedback
 Imports TopStepTrader.Services.Market
 Imports TopStepTrader.Services.Risk
@@ -29,11 +28,14 @@ Namespace TopStepTrader.Services
 
             ' ── Account
             services.AddScoped(Of IAccountService, AccountService)()
+            services.AddScoped(Of IBalanceHistoryService, BalanceHistoryService)()
 
             ' ── Market
             services.AddScoped(Of MarketDataService)()
             services.AddScoped(Of IMarketDataService)(Function(sp) sp.GetRequiredService(Of MarketDataService)())
             services.AddScoped(Of BarIngestionService)()
+            ' TICKET-006: bar download + caching for the Backtest page
+            services.AddScoped(Of IBarCollectionService, BarCollectionService)()
 
             ' ── Signals
             services.AddScoped(Of ISignalService, SignalService)()
@@ -45,6 +47,11 @@ Namespace TopStepTrader.Services
             services.AddScoped(Of IOrderService, OrderService)()
             services.AddScoped(Of AutoExecutionService)()
             services.AddScoped(Of TrendAnalysisService)()
+
+            ' ── AI-Assisted Trading
+            services.AddScoped(Of StrategyParserService)()
+            services.AddTransient(Of StrategyExecutionEngine)()
+            services.AddScoped(Of ClaudeReviewService)()
 
             ' ── Backtest
             services.AddScoped(Of IBacktestService, BacktestEngine)()

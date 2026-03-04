@@ -1,5 +1,5 @@
-Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Core.Enums
+Imports TopStepTrader.Core.Models
 
 Namespace TopStepTrader.Core.Events
 
@@ -54,6 +54,36 @@ Namespace TopStepTrader.Core.Events
             Me.Reason = reason
             Me.DailyPnL = dailyPnL
             Me.Drawdown = drawdown
+        End Sub
+    End Class
+
+    ''' <summary>Raised by StrategyExecutionEngine when a trade entry order is placed.</summary>
+    Public Class TradeOpenedEventArgs
+        Inherits EventArgs
+        Public ReadOnly Property Side As Core.Enums.OrderSide
+        Public ReadOnly Property ContractId As String
+        Public ReadOnly Property ConfidencePct As Integer
+        Public ReadOnly Property EntryTime As DateTimeOffset
+        ''' <summary>TopStepX external order ID for the entry order. Nothing if placement failed.</summary>
+        Public ReadOnly Property ExternalOrderId As Long?
+        Public Sub New(side As Core.Enums.OrderSide, contractId As String, confidencePct As Integer,
+                       entryTime As DateTimeOffset, Optional externalOrderId As Long? = Nothing)
+            Me.Side = side
+            Me.ContractId = contractId
+            Me.ConfidencePct = confidencePct
+            Me.EntryTime = entryTime
+            Me.ExternalOrderId = externalOrderId
+        End Sub
+    End Class
+
+    ''' <summary>Raised by StrategyExecutionEngine when the bracket position closes (TP or SL filled).</summary>
+    Public Class TradeClosedEventArgs
+        Inherits EventArgs
+        Public ReadOnly Property ExitReason As String   ' "TP", "SL", or "Closed"
+        Public ReadOnly Property PnL As Decimal
+        Public Sub New(exitReason As String, pnl As Decimal)
+            Me.ExitReason = exitReason
+            Me.PnL = pnl
         End Sub
     End Class
 

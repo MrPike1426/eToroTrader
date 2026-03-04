@@ -1,4 +1,5 @@
 <UserControl x:Class="TopStepTrader.UI.Views.BacktestView"
+             xmlns:controls="clr-namespace:TopStepTrader.UI.Controls"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -6,116 +7,428 @@
              mc:Ignorable="d"
              Background="{StaticResource BackgroundBrush}">
 
-    <TabControl Background="{StaticResource BackgroundBrush}">
+    <UserControl.Resources>
+        <!--  DatePicker dark-theme fix.
+              The WPF Aero2 system ControlTemplate renders DatePicker using system
+              brushes that ignore local Background/Foreground setters, making the
+              control invisible on a dark background.
+              Fix mirrors the TICKET-019 ComboBox pattern: supply a custom
+              ControlTemplate so every visual element uses our palette.
 
-        <!-- Tab 1: Run -->
+              Two-part implementation:
+                1. Implicit DatePickerTextBox style — ensures the editable text
+                   field shows white text on a transparent background.
+                2. DarkDatePickerStyle (named) — dark card shell with accent border,
+                   matching UnclippedComboBoxStyle appearance.
+              The Calendar popup that appears on click retains the WPF default
+              light styling (full Calendar re-theming is out of scope), but is
+              fully functional.  -->
+
+        <!-- 1. DatePickerTextBox — internal text-entry control of DatePicker.
+                An implicit style applies automatically to the PART_TextBox instance
+                inside DarkDatePickerStyle's ControlTemplate.
+                Named parts required by DatePickerTextBox:
+                  PART_Watermark    – placeholder shown when no date is selected.
+                  PART_ContentHost  – ScrollViewer hosting the editable text.  -->
+        <Style TargetType="DatePickerTextBox">
+            <Setter Property="Foreground"               Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="Background"               Value="Transparent"/>
+            <Setter Property="BorderThickness"          Value="0"/>
+            <Setter Property="CaretBrush"               Value="{StaticResource AccentBrush}"/>
+            <Setter Property="SelectionBrush"           Value="{StaticResource AccentBrush}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DatePickerTextBox">
+                        <Grid>
+                            <!-- Watermark (placeholder) — collapsed unless no date selected -->
+                            <ContentControl x:Name="PART_Watermark"
+                                            Foreground="#66E0E0F0"
+                                            IsHitTestVisible="False"
+                                            Padding="4,0"
+                                            VerticalAlignment="Center"
+                                            Visibility="Collapsed"/>
+                            <!-- Editable text area -->
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="4,0"
+                                          VerticalAlignment="Center"
+                                          Foreground="{TemplateBinding Foreground}"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <!-- Show watermark when parent DatePicker has no selected date -->
+                            <DataTrigger Binding="{Binding Path=SelectedDate,
+                                                           RelativeSource={RelativeSource AncestorType={x:Type DatePicker}}}"
+                                         Value="{x:Null}">
+                                <Setter TargetName="PART_Watermark" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 2. Calendar popup — dark theme override.
+                The Calendar control is rendered inside PART_Popup. By default it uses
+                WPF system brushes (light background, dark text). This implicit style
+                ensures Calendar shows dark blue background matching the DatePicker shell.
+                Key parts: CalendarItem (month grid), CalendarDayButton (individual days). -->
+        <Style TargetType="Calendar">
+            <Setter Property="Background" Value="#FF243156"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="#FF2E3F6E"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <!-- CalendarItem (the month/day grid inside the Calendar) -->
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Calendar">
+                        <StackPanel HorizontalAlignment="Center">
+                            <CalendarItem x:Name="PART_CalendarItem"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Foreground="{TemplateBinding Foreground}"/>
+                        </StackPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- CalendarItem — header + day buttons inside Calendar -->
+        <Style TargetType="CalendarItem">
+            <Setter Property="Background" Value="#FF243156"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="#FF2E3F6E"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
+        <!-- Individual day buttons in the calendar grid -->
+        <Style TargetType="CalendarDayButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CalendarDayButton">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <TextBlock Text="{TemplateBinding Content}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <!-- Hover: highlight day cell -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#332E3F6E"/>
+                            </Trigger>
+                            <!-- Selected: emphasize current selection -->
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#FF2E3F6E"/>
+                                <Setter Property="Foreground" Value="#FFFF9500"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                            </Trigger>
+                            <!-- Grayed out (previous/next month) -->
+                            <Trigger Property="IsBlackedOut" Value="True">
+                                <Setter Property="Foreground" Value="#66888888"/>
+                                <Setter Property="IsEnabled" Value="False"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 3. Outer DatePicker shell — dark card look matching UnclippedComboBoxStyle.
+                Named parts required by DatePicker:
+                  PART_TextBox – DatePickerTextBox (editable field).
+                  PART_Button  – Button that opens the calendar popup.
+                  PART_Popup   – Popup hosting the Calendar control.
+                DatePicker wires PART_Button → PART_Popup internally.  -->
+        <Style x:Key="DarkDatePickerStyle" TargetType="DatePicker">
+            <Setter Property="Background"      Value="#FF243156"/>
+            <Setter Property="Foreground"      Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush"     Value="#FF2E3F6E"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontFamily"      Value="Segoe UI"/>
+            <Setter Property="FontSize"        Value="13"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DatePicker">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="26"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Editable date field (implicit DatePickerTextBox style applies) -->
+                                <DatePickerTextBox x:Name="PART_TextBox"
+                                                   Grid.Column="0"
+                                                   Foreground="{TemplateBinding Foreground}"
+                                                   Background="Transparent"
+                                                   BorderThickness="0"
+                                                   Padding="6,0"
+                                                   VerticalContentAlignment="Center"/>
+
+                                <!-- Calendar toggle — chevron-down glyph matching ComboBox arrow -->
+                                <Button x:Name="PART_Button"
+                                        Grid.Column="1"
+                                        Focusable="False"
+                                        VerticalAlignment="Stretch"
+                                        HorizontalAlignment="Stretch">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="BtnBd"
+                                                    Background="Transparent"
+                                                    CornerRadius="0,3,3,0">
+                                                <Path Data="M0,0 L4,5 L8,0 Z"
+                                                      Fill="#FFE0E0F0"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="BtnBd" Property="Background"
+                                                            Value="#332E3F6E"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+
+                                <!-- Calendar popup — positioned and opened by DatePicker internally -->
+                                <Popup x:Name="PART_Popup"
+                                       AllowsTransparency="True"
+                                       Placement="Bottom"
+                                       StaysOpen="False"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <!--
+        TICKET-006: Backtest Page Complete Rewrite — Phase 1 (UI Layout)
+        Workflow: Choose Contract → Choose Strategy → Auto-Adjust Parameters →
+                  Download Bars → Train Model → Run Backtest → View Results
+        Phase 1 delivers the UI layout and ViewModel bindings.
+        Phase 2 will wire in real bar download (BarCollectionService.EnsureBarsAsync).
+    -->
+
+    <TabControl x:Name="MainTabControl" Background="{StaticResource BackgroundBrush}">
+
+        <!-- ══ Tab 1: Run Backtest ══════════════════════════════════════════ -->
         <TabItem Header="🔬  Run Backtest">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <Grid Margin="24,20">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>   <!-- Row  0: Page title -->
+                        <RowDefinition Height="16"/>     <!-- Row  1: spacer -->
+                        <RowDefinition Height="Auto"/>   <!-- Row  2: Config form -->
+                        <RowDefinition Height="8"/>      <!-- Row  3: spacer -->
+                        <RowDefinition Height="Auto"/>   <!-- Row  4: Bar-download status -->
+                        <RowDefinition Height="8"/>      <!-- Row  5: spacer -->
+                        <RowDefinition Height="Auto"/>   <!-- Row  6: Action buttons -->
+                        <RowDefinition Height="6"/>      <!-- Row  7: spacer -->
+                        <RowDefinition Height="Auto"/>   <!-- Row  8: Progress bar -->
+                        <RowDefinition Height="16"/>     <!-- Row  9: spacer -->
+                        <RowDefinition Height="Auto"/>   <!-- Row 10: Metrics summary -->
+                        <RowDefinition Height="16"/>     <!-- Row 11: spacer -->
+                        <RowDefinition Height="*"/>      <!-- Row 12: Trade list -->
                     </Grid.RowDefinitions>
 
+                    <!-- Page title -->
                     <TextBlock Grid.Row="0" Text="🔬  Backtest Configuration"
                                Style="{StaticResource PageTitleStyle}"/>
 
-                    <!-- Config form -->
+                    <!-- ── Config form ───────────────────────────────────── -->
                     <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}"
                             CornerRadius="6" Padding="20,16">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="140"/>
-                                <ColumnDefinition Width="200"/>
-                                <ColumnDefinition Width="32"/>
-                                <ColumnDefinition Width="140"/>
-                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="145"/>   <!-- label -->
+                                <ColumnDefinition Width="*"/>     <!-- left value -->
+                                <ColumnDefinition Width="32"/>    <!-- gap -->
+                                <ColumnDefinition Width="145"/>   <!-- label -->
+                                <ColumnDefinition Width="*"/>     <!-- right value -->
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>   <!-- Row 0: Contract | Strategy -->
                                 <RowDefinition Height="10"/>
-                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>   <!-- Row 2: Capital/Qty | TP/SL -->
                                 <RowDefinition Height="10"/>
-                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>   <!-- Row 4: Start Date | End Date -->
                                 <RowDefinition Height="10"/>
-                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>   <!-- Row 6: Min Confidence | Interval -->
+                                <RowDefinition Height="10"/>
+                                <RowDefinition Height="Auto"/>   <!-- Row 8: (unused, reserved) -->
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Run Name:" VerticalAlignment="Center"
+                            <!-- Row 0 ── Contract | Strategy ────────────── -->
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Contract:" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding RunName, UpdateSourceTrigger=PropertyChanged}"/>
+                            <!--  ContractSelectorControl is self-contained (4 hardcoded micro-futures).
+                                  Outputs long-form ID to ContractIdText.  -->
+                            <controls:ContractSelectorControl
+                                       Grid.Row="0" Grid.Column="1"
+                                       ContractId="{Binding ContractIdText, Mode=TwoWay,
+                                                   UpdateSourceTrigger=PropertyChanged}"/>
 
-                            <TextBlock Grid.Row="0" Grid.Column="3" Text="Contract ID:" VerticalAlignment="Center"
+                            <TextBlock Grid.Row="0" Grid.Column="3"
+                                       Text="Strategy:" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Row="0" Grid.Column="4" Text="{Binding ContractIdText, UpdateSourceTrigger=PropertyChanged}"/>
+                            <!--  Strategy dropdown — selecting a strategy triggers:
+                                  1. Auto-populate Capital/Qty/TP/SL from strategy defaults
+                                  2. Background bar download / availability check
+                                  White text via ItemTemplate (TICKET-019 pattern).  -->
+                            <ComboBox Grid.Row="0" Grid.Column="4"
+                                      ItemsSource="{Binding AvailableStrategies}"
+                                      SelectedItem="{Binding SelectedStrategyName, Mode=TwoWay,
+                                                    UpdateSourceTrigger=PropertyChanged}"
+                                      Style="{StaticResource UnclippedComboBoxStyle}"
+                                      ItemContainerStyle="{StaticResource DarkComboBoxItemStyle}"
+                                      ToolTip="Select strategy — Capital/Qty/TP/SL auto-adjust on selection; bars downloaded automatically">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}"
+                                                   Foreground="White"
+                                                   VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
 
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Start Date:" VerticalAlignment="Center"
+                            <!-- Row 2 ── Capital / Qty | TP / SL ─────────── -->
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="Capital ($) / Qty:" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <DatePicker Grid.Row="2" Grid.Column="1"
+                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                <TextBox Text="{Binding InitialCapital, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="80" ToolTip="Initial capital in dollars"/>
+                                <TextBox Text="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="50" Margin="8,0,0,0"
+                                         ToolTip="Contracts per signal"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="2" Grid.Column="3"
+                                       Text="TP / SL (ticks):" VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <StackPanel Grid.Row="2" Grid.Column="4" Orientation="Horizontal">
+                                <TextBox Text="{Binding TakeProfitTicks, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="50" ToolTip="Take profit ticks"/>
+                                <TextBlock Text="/" VerticalAlignment="Center" Margin="6,0,6,0"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBox Text="{Binding StopLossTicks, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="50" ToolTip="Stop loss ticks"/>
+                            </StackPanel>
+
+                            <!-- Row 4 ── Start Date | End Date ──────────── -->
+                            <TextBlock Grid.Row="4" Grid.Column="0"
+                                       Text="Start Date:" VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <DatePicker Grid.Row="4" Grid.Column="1"
                                         SelectedDate="{Binding StartDate}"
-                                        Background="{StaticResource SurfaceBrush}"
-                                        Foreground="{StaticResource TextPrimaryBrush}"/>
+                                        Style="{StaticResource DarkDatePickerStyle}"/>
 
-                            <TextBlock Grid.Row="2" Grid.Column="3" Text="End Date:" VerticalAlignment="Center"
+                            <TextBlock Grid.Row="4" Grid.Column="3"
+                                       Text="End Date:" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <DatePicker Grid.Row="2" Grid.Column="4"
+                            <DatePicker Grid.Row="4" Grid.Column="4"
                                         SelectedDate="{Binding EndDate}"
-                                        Background="{StaticResource SurfaceBrush}"
-                                        Foreground="{StaticResource TextPrimaryBrush}"/>
+                                        Style="{StaticResource DarkDatePickerStyle}"/>
 
-                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Initial Capital:" VerticalAlignment="Center"
+                            <!-- Row 6 ── Min Confidence | Interval ──────────────────── -->
+                            <TextBlock Grid.Row="6" Grid.Column="0"
+                                       Text="Min Confidence:" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding InitialCapital, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox Grid.Row="6" Grid.Column="1"
+                                     Text="{Binding MinConfidence, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Minimum signal confidence (0.0–1.0, e.g. 0.65 = 65%)"/>
 
-                            <TextBlock Grid.Row="4" Grid.Column="3" Text="Min Confidence:" VerticalAlignment="Center"
+                            <TextBlock Grid.Row="6" Grid.Column="3"
+                                       Text="Interval:" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Row="4" Grid.Column="4" Text="{Binding MinConfidence, UpdateSourceTrigger=PropertyChanged}"/>
-
-                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Stop Loss (ticks):" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding StopLossTicks, UpdateSourceTrigger=PropertyChanged}"/>
-
-                            <TextBlock Grid.Row="6" Grid.Column="3" Text="Take Profit (ticks):" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Row="6" Grid.Column="4" Text="{Binding TakeProfitTicks, UpdateSourceTrigger=PropertyChanged}"/>
+                            <ComboBox Grid.Row="6" Grid.Column="4"
+                                      ItemsSource="{Binding AvailableIntervals}"
+                                      SelectedItem="{Binding SelectedInterval, Mode=TwoWay,
+                                                    UpdateSourceTrigger=PropertyChanged}"
+                                      Style="{StaticResource UnclippedComboBoxStyle}"
+                                      ItemContainerStyle="{StaticResource DarkComboBoxItemStyle}"
+                                      ToolTip="Bar timeframe for backtest (5-min bars are cached)">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}"
+                                                   Foreground="White"
+                                                   VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
 
                         </Grid>
                     </Border>
 
-                    <!-- Progress & buttons -->
-                    <StackPanel Grid.Row="4" Orientation="Horizontal">
-                        <Button Content="▶  Run Backtest"
-                                Command="{Binding RunCommand}"
-                                Style="{StaticResource PrimaryButtonStyle}"
-                                Width="160"/>
-                        <Button Content="■  Cancel"
-                                Command="{Binding CancelCommand}"
-                                Style="{StaticResource DangerButtonStyle}"
-                                Margin="12,0,0,0" Width="80"/>
+                    <!-- ── Bar-download / availability status ─────────────── -->
+                    <!--  Shown only when HasBarsStatus is True.
+                          Color: AccentBrush = checking, BuyBrush = ready, SellBrush = error.  -->
+                    <TextBlock Grid.Row="4"
+                               Text="{Binding BarsStatusText}"
+                               Foreground="{Binding BarsStatusColor,
+                                           Converter={StaticResource BrushKeyConverter}}"
+                               FontFamily="Consolas" FontSize="11"
+                               Visibility="{Binding HasBarsStatus,
+                                           Converter={StaticResource BoolToVisibilityConverter}}"/>
+
+                    <!-- ── Action buttons ─────────────────────────────────── -->
+                    <StackPanel Grid.Row="6" Orientation="Horizontal">
+                        <!--  Workflow buttons in order: Train Model → Run Backtest → Export CSV
+                              Train Model: enabled when not already training/running
+                              Run Backtest: enabled only when bars are available AND not running/training
+                              Export CSV: always enabled (button checks if results exist before export)  -->
                         <Button Content="🧠  Train Model"
                                 Command="{Binding TrainModelCommand}"
                                 Style="{StaticResource SecondaryButtonStyle}"
-                                Margin="24,0,0,0" Width="160"
-                                ToolTip="Train / retrain the ML signal model using bar history from the database"/>
+                                Width="140"
+                                ToolTip="Pre-calculate EMA/RSI indicator values on the downloaded bars"/>
+                        <Button Content="▶  Run Backtest"
+                                Command="{Binding RunCommand}"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Width="160"
+                                Margin="12,0,0,0"
+                                ToolTip="Execute the selected strategy on downloaded bars"/>
+                        <Button Content="📊  Export CSV"
+                                Command="{Binding ExportCsvCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Margin="12,0,0,0" Width="120"
+                                ToolTip="Export backtest results to CSV file"/>
                         <TextBlock Text="{Binding ProgressText}"
-                                   VerticalAlignment="Center" Margin="20,0,0,0"
+                                   VerticalAlignment="Center" Margin="24,0,0,0"
                                    Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
                     </StackPanel>
 
-                    <ProgressBar Grid.Row="6" Value="{Binding Progress}" Maximum="100"
-                                 Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                    <!-- ── Progress bar ───────────────────────────────────── -->
+                    <!--  Indeterminate during bar download or model training;
+                          determinate (0–100) during backtest execution.  -->
+                    <ProgressBar Grid.Row="8" Height="4"
+                                 IsIndeterminate="{Binding IsIndeterminateProgress}"
+                                 Value="{Binding Progress}" Maximum="100"
+                                 Visibility="{Binding IsWorking,
+                                             Converter={StaticResource BoolToVisibilityConverter}}"/>
 
-                    <!-- Results summary -->
-                    <Border Grid.Row="6" Background="{StaticResource CardBrush}"
-                            CornerRadius="6" Padding="16,14"
-                            Margin="0,40,0,0">
+                    <!-- ── Results summary metrics ────────────────────────── -->
+                    <Border Grid.Row="10" Background="{StaticResource CardBrush}"
+                            CornerRadius="6" Padding="16,14">
                         <StackPanel Orientation="Horizontal">
                             <StackPanel Margin="0,0,32,0">
                                 <TextBlock Text="TRADES" Style="{StaticResource SectionHeadingStyle}"/>
@@ -129,7 +442,8 @@
                                 <TextBlock Text="TOTAL P&amp;L" Style="{StaticResource SectionHeadingStyle}"/>
                                 <TextBlock Text="{Binding TotalPnL, StringFormat=C0}"
                                            Style="{StaticResource MetricValueStyle}"
-                                           Foreground="{Binding PnLColor, Converter={StaticResource BrushKeyConverter}}"/>
+                                           Foreground="{Binding PnLColor,
+                                                       Converter={StaticResource BrushKeyConverter}}"/>
                             </StackPanel>
                             <StackPanel Margin="0,0,32,0">
                                 <TextBlock Text="MAX DRAWDOWN" Style="{StaticResource SectionHeadingStyle}"/>
@@ -149,10 +463,39 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Trade list -->
-                    <DataGrid Grid.Row="8"
+                    <!-- ── Trade list ─────────────────────────────────────── -->
+                    <DataGrid Grid.Row="12"
                               ItemsSource="{Binding Trades}"
-                              IsReadOnly="True" Margin="0,0,0,0">
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserSortColumns="False"
+                              CanUserResizeRows="False"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="None"
+                              Background="Transparent"
+                              RowBackground="Transparent"
+                              AlternatingRowBackground="#0AFFFFFF"
+                              BorderThickness="0"
+                              FontFamily="Consolas" FontSize="10"
+                              Foreground="{StaticResource TextPrimaryBrush}">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                <Setter Property="FontSize" Value="9"/>
+                                <Setter Property="Padding" Value="4,3"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="4,2"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                            </Style>
+                        </DataGrid.CellStyle>
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Entry Time"  Binding="{Binding EntryTime}"  Width="130"/>
                             <DataGridTextColumn Header="Exit Time"   Binding="{Binding ExitTime}"   Width="130"/>
@@ -163,7 +506,8 @@
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding PnL}"
-                                                   Foreground="{Binding PnLColor, Converter={StaticResource BrushKeyConverter}}"
+                                                   Foreground="{Binding PnLColor,
+                                                               Converter={StaticResource BrushKeyConverter}}"
                                                    FontWeight="SemiBold" VerticalAlignment="Center" Padding="4,0"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -177,7 +521,7 @@
             </ScrollViewer>
         </TabItem>
 
-        <!-- Tab 2: History -->
+        <!-- ══ Tab 2: Previous Runs (unchanged) ════════════════════════════ -->
         <TabItem Header="📁  Previous Runs">
             <Grid Margin="24,20">
                 <Grid.RowDefinitions>
@@ -194,178 +538,48 @@
                 </StackPanel>
                 <DataGrid Grid.Row="2"
                           ItemsSource="{Binding PreviousRuns}"
-                          IsReadOnly="True">
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserSortColumns="False"
+                          CanUserResizeRows="False"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="None"
+                          Background="Transparent"
+                          RowBackground="Transparent"
+                          AlternatingRowBackground="#0AFFFFFF"
+                          BorderThickness="0"
+                          FontFamily="Consolas" FontSize="10"
+                          Foreground="{StaticResource TextPrimaryBrush}">
+                    <DataGrid.ColumnHeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                            <Setter Property="FontSize" Value="9"/>
+                            <Setter Property="Padding" Value="4,3"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                        </Style>
+                    </DataGrid.ColumnHeaderStyle>
+                    <DataGrid.CellStyle>
+                        <Style TargetType="DataGridCell">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Padding" Value="4,2"/>
+                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGrid.CellStyle>
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="ID"         Binding="{Binding Id}"        Width="60"/>
-                        <DataGridTextColumn Header="Name"       Binding="{Binding RunName}"   Width="180"/>
-                        <DataGridTextColumn Header="Start"      Binding="{Binding StartDate}" Width="100"/>
-                        <DataGridTextColumn Header="End"        Binding="{Binding EndDate}"   Width="100"/>
-                        <DataGridTextColumn Header="Trades"     Binding="{Binding Trades}"    Width="70"/>
-                        <DataGridTextColumn Header="Win Rate"   Binding="{Binding WinRate}"   Width="80"/>
-                        <DataGridTextColumn Header="Total P&amp;L" Binding="{Binding TotalPnL}" Width="100"/>
-                        <DataGridTextColumn Header="Sharpe"     Binding="{Binding Sharpe}"    Width="*"/>
+                        <DataGridTextColumn Header="ID"            Binding="{Binding Id}"        Width="60"/>
+                        <DataGridTextColumn Header="Name"          Binding="{Binding RunName}"   Width="220"/>
+                        <DataGridTextColumn Header="Start"         Binding="{Binding StartDate}" Width="100"/>
+                        <DataGridTextColumn Header="End"           Binding="{Binding EndDate}"   Width="100"/>
+                        <DataGridTextColumn Header="Trades"        Binding="{Binding Trades}"    Width="70"/>
+                        <DataGridTextColumn Header="Win Rate"      Binding="{Binding WinRate}"   Width="80"/>
+                        <DataGridTextColumn Header="Total P&amp;L" Binding="{Binding TotalPnL}"  Width="100"/>
+                        <DataGridTextColumn Header="Sharpe"        Binding="{Binding Sharpe}"    Width="*"/>
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>
-        </TabItem>
-
-        <!-- Tab 3: Test Trade — EMA/RSI Trend Analysis -->
-        <TabItem Header="🎯  Test Trade">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <Grid Margin="24,20">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-
-                    <TextBlock Grid.Row="0" Text="🎯  Test Trade — EMA / RSI Trend Analysis"
-                               Style="{StaticResource PageTitleStyle}"/>
-
-                    <!-- Contract input -->
-                    <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}"
-                            CornerRadius="6" Padding="20,16">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="200"/>
-                                <ColumnDefinition Width="24"/>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="80"/>
-                                <ColumnDefinition Width="24"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock Grid.Column="0" Text="Contract ID:"
-                                       VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Column="1"
-                                     Text="{Binding TestTradeContractId, UpdateSourceTrigger=PropertyChanged}"
-                                     VerticalAlignment="Center"/>
-
-                            <TextBlock Grid.Column="3" Text="Quantity:"
-                                       VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Column="4"
-                                     Text="{Binding TestTradeQuantity, UpdateSourceTrigger=PropertyChanged}"
-                                     VerticalAlignment="Center"/>
-
-                            <Button Grid.Column="6"
-                                    Content="📊  Analyse Trend"
-                                    Command="{Binding AnalyseTrendCommand}"
-                                    Style="{StaticResource PrimaryButtonStyle}"
-                                    Width="160" HorizontalAlignment="Left"/>
-                        </Grid>
-                    </Border>
-
-                    <!-- Trend Analysis Results -->
-                    <Border Grid.Row="4" Background="{StaticResource CardBrush}"
-                            CornerRadius="6" Padding="20,16"
-                            Visibility="{Binding HasTrendResult, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="12"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="16"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-
-                            <!-- Probability display -->
-                            <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center">
-                                <StackPanel Margin="0,0,48,0" HorizontalAlignment="Center">
-                                    <TextBlock Text="UP PROBABILITY"
-                                               Style="{StaticResource SectionHeadingStyle}"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="{Binding UpProbabilityText}"
-                                               FontSize="36" FontWeight="Bold"
-                                               Foreground="{StaticResource BuyBrush}"
-                                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                                </StackPanel>
-                                <StackPanel HorizontalAlignment="Center">
-                                    <TextBlock Text="DOWN PROBABILITY"
-                                               Style="{StaticResource SectionHeadingStyle}"
-                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="{Binding DownProbabilityText}"
-                                               FontSize="36" FontWeight="Bold"
-                                               Foreground="{StaticResource SellBrush}"
-                                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                                </StackPanel>
-                            </StackPanel>
-
-                            <!-- Indicator values -->
-                            <UniformGrid Grid.Row="2" Columns="4" HorizontalAlignment="Stretch">
-                                <StackPanel Margin="0,0,8,0">
-                                    <TextBlock Text="EMA 21" Style="{StaticResource SectionHeadingStyle}"/>
-                                    <TextBlock Text="{Binding TrendEMA21Text}"
-                                               Style="{StaticResource MetricValueStyle}" Margin="0,2,0,0"/>
-                                </StackPanel>
-                                <StackPanel Margin="4,0,4,0">
-                                    <TextBlock Text="EMA 50" Style="{StaticResource SectionHeadingStyle}"/>
-                                    <TextBlock Text="{Binding TrendEMA50Text}"
-                                               Style="{StaticResource MetricValueStyle}" Margin="0,2,0,0"/>
-                                </StackPanel>
-                                <StackPanel Margin="4,0,4,0">
-                                    <TextBlock Text="RSI 14" Style="{StaticResource SectionHeadingStyle}"/>
-                                    <TextBlock Text="{Binding TrendRSI14Text}"
-                                               Style="{StaticResource MetricValueStyle}" Margin="0,2,0,0"/>
-                                </StackPanel>
-                                <StackPanel Margin="8,0,0,0">
-                                    <TextBlock Text="LAST CLOSE" Style="{StaticResource SectionHeadingStyle}"/>
-                                    <TextBlock Text="{Binding TrendLastCloseText}"
-                                               Style="{StaticResource MetricValueStyle}" Margin="0,2,0,0"/>
-                                </StackPanel>
-                            </UniformGrid>
-
-                            <!-- Signal breakdown -->
-                            <ItemsControl Grid.Row="4" ItemsSource="{Binding TrendSignals}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding}"
-                                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                                   FontSize="11" Margin="0,1,0,1"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </Grid>
-                    </Border>
-
-                    <!-- Test BUY / Test SELL buttons -->
-                    <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Button Content="▲  Test BUY"
-                                Command="{Binding TestBuyCommand}"
-                                Style="{StaticResource BuyButtonStyle}"
-                                Width="180" Height="48" FontSize="16" FontWeight="Bold"
-                                Margin="0,0,24,0"/>
-                        <Button Content="▼  Test SELL"
-                                Command="{Binding TestSellCommand}"
-                                Style="{StaticResource SellButtonStyle}"
-                                Width="180" Height="48" FontSize="16" FontWeight="Bold"/>
-                    </StackPanel>
-
-                    <!-- Status -->
-                    <TextBlock Grid.Row="8"
-                               Text="{Binding TestTradeStatus}"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="12" HorizontalAlignment="Center"/>
-
-                    <!-- Analysis summary -->
-                    <TextBlock Grid.Row="10"
-                               Text="{Binding TrendSummaryText}"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="11" TextWrapping="Wrap"
-                               HorizontalAlignment="Left"/>
-
-                </Grid>
-            </ScrollViewer>
         </TabItem>
 
     </TabControl>

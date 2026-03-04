@@ -14,10 +14,10 @@ Namespace TopStepTrader.UI.ViewModels
     Public Class SettingsViewModel
         Inherits ViewModelBase
 
-        Private ReadOnly _authService      As IAuthService
-        Private ReadOnly _riskSettings     As RiskSettings
-        Private ReadOnly _tradingSettings  As TradingSettings
-        Private ReadOnly _apiSettings      As ApiSettings
+        Private ReadOnly _authService As IAuthService
+        Private ReadOnly _riskSettings As RiskSettings
+        Private ReadOnly _tradingSettings As TradingSettings
+        Private ReadOnly _apiSettings As ApiSettings
 
         ' ── API Status ───────────────────────────────────────────────────────
 
@@ -130,8 +130,8 @@ Namespace TopStepTrader.UI.ViewModels
 
         ' ── Commands ─────────────────────────────────────────────────────────
 
-        Public ReadOnly Property ConnectCommand     As RelayCommand
-        Public ReadOnly Property ApplyRiskCommand   As RelayCommand
+        Public ReadOnly Property ConnectCommand As RelayCommand
+        Public ReadOnly Property ApplyRiskCommand As RelayCommand
 
         ' ── Constructor ──────────────────────────────────────────────────────
 
@@ -139,19 +139,19 @@ Namespace TopStepTrader.UI.ViewModels
                        apiOptions As IOptions(Of ApiSettings),
                        riskOptions As IOptions(Of RiskSettings),
                        tradingOptions As IOptions(Of TradingSettings))
-            _authService     = authService
-            _apiSettings     = apiOptions.Value
-            _riskSettings    = riskOptions.Value
+            _authService = authService
+            _apiSettings = apiOptions.Value
+            _riskSettings = riskOptions.Value
             _tradingSettings = tradingOptions.Value
 
             ' Populate form from current settings
             _dailyLossLimit = _riskSettings.DailyLossLimitDollars.ToString()
-            _maxDrawdown    = _riskSettings.MaxDrawdownDollars.ToString()
-            _maxPosition    = _riskSettings.MaxPositionSizeContracts.ToString()
-            _minConfidence  = _riskSettings.MinSignalConfidence.ToString("F2")
-            _autoExecutionEnabled = _riskSettings.AutoExecutionEnabled
+            _maxDrawdown = _riskSettings.MaxDrawdownDollars.ToString()
+            _maxPosition = _riskSettings.MaxPositionSizeContracts.ToString()
+            _minConfidence = _riskSettings.MinSignalConfidence.ToString("F2")
+            _autoExecutionEnabled = True  ' Default to enabled
 
-            ConnectCommand   = New RelayCommand(AddressOf ExecuteConnect)
+            ConnectCommand = New RelayCommand(AddressOf ExecuteConnect)
             ApplyRiskCommand = New RelayCommand(AddressOf ExecuteApplyRisk)
         End Sub
 
@@ -204,10 +204,10 @@ Namespace TopStepTrader.UI.ViewModels
                 End If
 
                 ' Apply to live settings object (affects all services using IOptions<RiskSettings>)
-                _riskSettings.DailyLossLimitDollars    = dl
-                _riskSettings.MaxDrawdownDollars        = dd
-                _riskSettings.MaxPositionSizeContracts  = mp
-                _riskSettings.MinSignalConfidence       = mc
+                _riskSettings.DailyLossLimitDollars = dl
+                _riskSettings.MaxDrawdownDollars = dd
+                _riskSettings.MaxPositionSizeContracts = mp
+                _riskSettings.MinSignalConfidence = mc
 
                 StatusMessage = "Risk settings applied for this session"
 

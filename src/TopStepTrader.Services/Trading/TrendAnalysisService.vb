@@ -1,4 +1,3 @@
-Imports System.Linq
 Imports Microsoft.Extensions.Logging
 Imports TopStepTrader.Core.Enums
 Imports TopStepTrader.Core.Models
@@ -27,12 +26,12 @@ Namespace TopStepTrader.Services.Trading
         Private ReadOnly _logger As ILogger(Of TrendAnalysisService)
 
         ' ── Weights for each indicator signal ────────────────────────────────
-        Private Const EMA_CROSSOVER_WEIGHT   As Double = 25.0  ' EMA 21 vs EMA 50 crossover
-        Private Const PRICE_VS_EMA21_WEIGHT  As Double = 20.0  ' Price above/below EMA 21
-        Private Const PRICE_VS_EMA50_WEIGHT  As Double = 15.0  ' Price above/below EMA 50
-        Private Const RSI_TREND_WEIGHT       As Double = 20.0  ' RSI position (overbought/oversold/neutral)
-        Private Const EMA_MOMENTUM_WEIGHT    As Double = 10.0  ' EMA 21 slope (rising/falling)
-        Private Const CANDLE_PATTERN_WEIGHT  As Double = 10.0  ' Recent candle pattern (bullish/bearish)
+        Private Const EMA_CROSSOVER_WEIGHT As Double = 25.0  ' EMA 21 vs EMA 50 crossover
+        Private Const PRICE_VS_EMA21_WEIGHT As Double = 20.0  ' Price above/below EMA 21
+        Private Const PRICE_VS_EMA50_WEIGHT As Double = 15.0  ' Price above/below EMA 50
+        Private Const RSI_TREND_WEIGHT As Double = 20.0  ' RSI position (overbought/oversold/neutral)
+        Private Const EMA_MOMENTUM_WEIGHT As Double = 10.0  ' EMA 21 slope (rising/falling)
+        Private Const CANDLE_PATTERN_WEIGHT As Double = 10.0  ' Recent candle pattern (bullish/bearish)
 
         Public Sub New(barRepository As BarRepository,
                        logger As ILogger(Of TrendAnalysisService))
@@ -79,9 +78,9 @@ Namespace TopStepTrader.Services.Trading
 
             Dim currentEma21 = TechnicalIndicators.LastValid(ema21Arr)
             Dim currentEma50 = TechnicalIndicators.LastValid(ema50Arr)
-            Dim currentRsi   = TechnicalIndicators.LastValid(rsi14Arr)
-            Dim prevEma21    = TechnicalIndicators.PreviousValid(ema21Arr)
-            Dim lastClose    = closes.Last()
+            Dim currentRsi = TechnicalIndicators.LastValid(rsi14Arr)
+            Dim prevEma21 = TechnicalIndicators.PreviousValid(ema21Arr)
+            Dim lastClose = closes.Last()
 
             result.EMA21 = currentEma21
             result.EMA50 = currentEma50

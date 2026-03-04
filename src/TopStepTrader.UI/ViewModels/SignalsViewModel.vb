@@ -102,34 +102,34 @@ Namespace TopStepTrader.UI.ViewModels
 
     ''' <summary>View-friendly wrapper around TradeSignal.</summary>
     Public Class SignalRowVm
-        Public Property Time          As String
-        Public Property ContractId    As String
-        Public Property SignalType    As String
-        Public Property Confidence    As String
-        Public Property ModelVersion  As String
-        Public Property EntryPrice    As String
-        Public Property StopLoss      As String
-        Public Property TakeProfit    As String
+        Public Property Time As String
+        Public Property ContractId As String
+        Public Property SignalType As String
+        Public Property Confidence As String
+        Public Property ModelVersion As String
+        Public Property EntryPrice As String
+        Public Property StopLoss As String
+        Public Property TakeProfit As String
 
         Public ReadOnly Property SignalColor As String
             Get
                 Select Case SignalType
-                    Case "Buy"  : Return "BuyBrush"
+                    Case "Buy" : Return "BuyBrush"
                     Case "Sell" : Return "SellBrush"
-                    Case Else   : Return "TextSecondaryBrush"
+                    Case Else : Return "TextSecondaryBrush"
                 End Select
             End Get
         End Property
 
         Public Sub New(s As TradeSignal)
-            Time         = s.GeneratedAt.LocalDateTime.ToString("MM/dd HH:mm:ss")
-            ContractId   = s.ContractId
-            SignalType   = s.SignalType.ToString()
-            Confidence   = s.Confidence.ToString("P0")
+            Time = s.GeneratedAt.LocalDateTime.ToString("MM/dd HH:mm:ss")
+            ContractId = s.ContractId
+            SignalType = s.SignalType.ToString()
+            Confidence = s.Confidence.ToString("P0")
             ModelVersion = s.ModelVersion
-            EntryPrice   = If(s.SuggestedEntryPrice.HasValue, s.SuggestedEntryPrice.Value.ToString("F2"), "—")
-            StopLoss     = If(s.SuggestedStopLoss.HasValue,   s.SuggestedStopLoss.Value.ToString("F2"),   "—")
-            TakeProfit   = If(s.SuggestedTakeProfit.HasValue, s.SuggestedTakeProfit.Value.ToString("F2"), "—")
+            EntryPrice = If(s.SuggestedEntryPrice.HasValue, s.SuggestedEntryPrice.Value.ToString("F2"), "—")
+            StopLoss = If(s.SuggestedStopLoss.HasValue, s.SuggestedStopLoss.Value.ToString("F2"), "—")
+            TakeProfit = If(s.SuggestedTakeProfit.HasValue, s.SuggestedTakeProfit.Value.ToString("F2"), "—")
         End Sub
     End Class
 

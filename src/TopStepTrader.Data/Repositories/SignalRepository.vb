@@ -1,8 +1,8 @@
 Imports System.Threading
 Imports Microsoft.EntityFrameworkCore
 Imports Microsoft.Extensions.Logging
-Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Core.Enums
+Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Data.Entities
 
 Namespace TopStepTrader.Data.Repositories
@@ -36,31 +36,42 @@ Namespace TopStepTrader.Data.Repositories
             Return entity.Id
         End Function
 
+        ''' <remarks>
+        ''' ContractId filtering uses FromSqlInterpolated to bypass the VB.NET / EF Core
+        ''' string-comparison incompatibility (UAT-BUG-001): VB.NET compiles String = String
+        ''' inside expression trees to String.Compare(), which EF Core SQLite cannot translate.
+        ''' DateTime range filtering is chained in LINQ because DateTime comparisons do
+        ''' translate correctly in EF Core SQLite.
+        ''' </remarks>
         Public Async Function GetSignalHistoryAsync(contractId As String,
                                                      from As DateTime,
                                                      [to] As DateTime,
                                                      Optional cancel As CancellationToken = Nothing) As Task(Of List(Of TradeSignal))
-            ' Build the query — only filter by ContractId when a non-empty filter is supplied.
-            Dim query = _context.Signals.AsQueryable()
-
+            ' Only filter by ContractId when a non-empty value is supplied.
+            Dim query As IQueryable(Of SignalEntity)
             If Not String.IsNullOrWhiteSpace(contractId) Then
-                query = query.Where(Function(s) s.ContractId = contractId)
+                ' FromSqlInterpolated passes ContractId as a SQL parameter, bypassing the
+                ' VB.NET expression-tree String.Compare() translation issue.
+                query = _context.Signals _
+                    .FromSqlInterpolated($"SELECT * FROM Signals WHERE ContractId = {contractId}")
+            Else
+                query = _context.Signals.AsQueryable()
             End If
 
-            query = query.Where(Function(s) s.GeneratedAt >= from AndAlso s.GeneratedAt <= [to])
-
             Dim entities = Await query _
+                .Where(Function(s) s.GeneratedAt >= from AndAlso s.GeneratedAt <= [to]) _
                 .OrderByDescending(Function(s) s.GeneratedAt) _
                 .ToListAsync(cancel)
 
             Return entities.Select(AddressOf MapToModel).ToList()
         End Function
 
+        ''' <remarks>See GetSignalHistoryAsync for the FromSqlInterpolated rationale (UAT-BUG-001).</remarks>
         Public Async Function GetRecentSignalsAsync(contractId As String,
                                                      count As Integer,
                                                      Optional cancel As CancellationToken = Nothing) As Task(Of List(Of TradeSignal))
             Dim entities = Await _context.Signals _
-                .Where(Function(s) s.ContractId = contractId) _
+                .FromSqlInterpolated($"SELECT * FROM Signals WHERE ContractId = {contractId}") _
                 .OrderByDescending(Function(s) s.GeneratedAt) _
                 .Take(count) _
                 .ToListAsync(cancel)

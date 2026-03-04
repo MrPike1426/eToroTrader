@@ -1,0 +1,121 @@
+# TICKET-028: Implement Tiered Pyramiding for Momentum Scaling
+
+**Status:** Backlog  
+**Priority:** High  
+**Severity:** High  
+**Assigned To:** Claude Sonnet 4.6  
+**StartDate:** (unscheduled)  
+**Due Date:** 18/03/2026  
+**TokenEstimate:** 12  
+**Labels:** `feature,risk-management,pyramiding,trade-execution,position-sizing`
+
+---
+
+## Problem Statement
+
+The current pyramiding logic adds a **uniform +1 contract per scale-in event** until a max size cap is reached.  
+This approach ignores the fact that:
+
+- Early entries have higher signal quality and expectancy,
+- Late-stage adds are statistically weaker and riskier,
+- Equal sizing across all adds leads to **risk concentration late in trends**.
+
+As a result, trades frequently:
+- Give back a large portion of open profit,
+- Flatten entirely on normal pullbacks,
+- Display good win rate but weak expectancy.
+
+---
+
+## Desired Outcome
+
+- Concentrate position size in **early, high-quality entries**.
+- Reduce or block late-stage adds when trend extension risk is high.
+- Preserve existing entry signals and scale-in conditions.
+- Improve expectancy without increasing max position size.
+
+---
+
+## Requirements
+
+### 1. Tiered Allocation Model
+Replace uniform “+1 contract” scaling with a tiered model:
+
+- **Tier A (Core)**  
+  - First N adds (default: 2)  
+  - Allocate a configurable fraction of total position size  
+  - Default: 55–60% of TargetTotalSize split across first two adds
+
+- **Tier B (Momentum)**  
+  - Next add (AddIndex = 2)  
+  - Allocate small fixed size (default: 1 contract)
+
+- **Tier C (Extension)**  
+  - All further adds  
+  - Blocked by default unless explicitly enabled
+
+### 2. Add Index Tracking
+- Track `AddIndex`:
+  - Initial entry = AddIndex 0
+  - Each successful scale-in increments AddIndex
+- Reset AddIndex when flat.
+
+### 3. Exposure Constraints
+- Never allow total position size to exceed `TargetTotalSize`.
+- Clip add quantity if remaining capacity is smaller than tier allocation.
+- If remaining capacity is zero, block the add.
+
+### 4. Configuration Parameters (with defaults)
+- `TargetTotalSize` (existing, reused)
+- `CoreSizeFraction = 0.55`
+- `CoreAddsCount = 2`
+- `MomentumTierSize = 1`
+- `ExtensionAllowed = false`
+- `ExtensionTierSize = 1`
+
+### 5. Bracket Handling
+- Preserve existing SL/TP logic.
+- If multiple contracts are added in one tier:
+  - Either create per-contract brackets, or
+  - One aggregated bracket sized to the add quantity (match existing architecture).
+
+---
+
+## Acceptance Criteria
+
+- [ ] With TargetTotalSize=10 and CoreSizeFraction=0.6:
+  - First two adds result in total size = 6 contracts.
+- [ ] Third add increases size by MomentumTierSize only.
+- [ ] Further adds are blocked by default.
+- [ ] No changes to entry conditions or exit logic.
+- [ ] Build passes with 0 errors and 0 warnings.
+
+---
+
+## Notes
+
+- This ticket only changes **how much** is added, not **when** adds are allowed.
+- Follow-up tickets (e.g. Heat Budget) may further restrict scaling.
+- Keep logic deterministic and testable.
+
+---
+
+## Progress Tracking
+
+### Phase 1: Design
+- [ ] Identify scale-in logic
+- [ ] Add AddIndex tracking
+- [ ] Define tier allocation function
+
+### Phase 2: Implementation
+- [ ] Replace uniform scaling with tiered sizing
+- [ ] Enforce capacity clipping
+
+### Phase 3: Validation
+- [ ] Replay test with trending sessions
+- [ ] Confirm late adds are blocked
+
+**Last Updated:** 2026-03-03 14:48 UTC  
+**Current Status:** Backlog  
+**Blocker:** None  
+**Next Concrete Action:** Queue for development

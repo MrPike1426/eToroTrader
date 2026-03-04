@@ -68,6 +68,24 @@ Namespace TopStepTrader.UI.ViewModels
             End Get
         End Property
 
+        Public ReadOnly Property AiTradingView As AiTradingView
+            Get
+                Return Resolve(Of AiTradingView)("AiTrading")
+            End Get
+        End Property
+
+        Public ReadOnly Property TestTradeView As TestTradeView
+            Get
+                Return Resolve(Of TestTradeView)("TestTrade")
+            End Get
+        End Property
+
+        Public ReadOnly Property SniperView As SniperView
+            Get
+                Return Resolve(Of SniperView)("Sniper")
+            End Get
+        End Property
+
         Public Sub Dispose() Implements IDisposable.Dispose
             If Not _disposed Then
                 For Each scope In _scopes.Values

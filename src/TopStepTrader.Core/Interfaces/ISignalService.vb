@@ -1,5 +1,5 @@
-Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Core.Events
+Imports TopStepTrader.Core.Models
 
 Namespace TopStepTrader.Core.Interfaces
 

@@ -1,6 +1,4 @@
 Imports Microsoft.Extensions.DependencyInjection
-Imports Microsoft.Extensions.Options
-Imports TopStepTrader.Core.Settings
 Imports TopStepTrader.API.Http
 Imports TopStepTrader.API.Hubs
 Imports TopStepTrader.API.RateLimiting

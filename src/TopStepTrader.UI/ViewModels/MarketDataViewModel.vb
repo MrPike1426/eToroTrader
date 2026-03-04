@@ -2,7 +2,6 @@ Imports System.Windows
 Imports Microsoft.Extensions.Options
 Imports TopStepTrader.Core.Events
 Imports TopStepTrader.Core.Interfaces
-Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Core.Settings
 Imports TopStepTrader.UI.ViewModels.Base
 
@@ -15,7 +14,7 @@ Namespace TopStepTrader.UI.ViewModels
         Inherits ViewModelBase
 
         Private ReadOnly _marketDataService As IMarketDataService
-        Private ReadOnly _tradingSettings   As TradingSettings
+        Private ReadOnly _tradingSettings As TradingSettings
 
         ' ── Bindable properties ──────────────────────────────────────────────
 
@@ -126,7 +125,7 @@ Namespace TopStepTrader.UI.ViewModels
 
         ' ── Commands ─────────────────────────────────────────────────────────
 
-        Public ReadOnly Property SubscribeCommand   As RelayCommand
+        Public ReadOnly Property SubscribeCommand As RelayCommand
         Public ReadOnly Property UnsubscribeCommand As RelayCommand
 
         ' ── Constructor ──────────────────────────────────────────────────────
@@ -134,9 +133,9 @@ Namespace TopStepTrader.UI.ViewModels
         Public Sub New(marketDataService As IMarketDataService,
                        tradingOptions As IOptions(Of TradingSettings))
             _marketDataService = marketDataService
-            _tradingSettings   = tradingOptions.Value
+            _tradingSettings = tradingOptions.Value
 
-            SubscribeCommand   = New RelayCommand(AddressOf ExecuteSubscribe,
+            SubscribeCommand = New RelayCommand(AddressOf ExecuteSubscribe,
                                                    Function() Not IsSubscribed AndAlso Not String.IsNullOrEmpty(_contractId))
             UnsubscribeCommand = New RelayCommand(AddressOf ExecuteUnsubscribe,
                                                    Function() IsSubscribed)

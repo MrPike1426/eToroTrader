@@ -13,40 +13,40 @@ Namespace TopStepTrader.Data.Entities
 
         <Key>
         <DatabaseGenerated(DatabaseGeneratedOption.Identity)>
-        Public Property Id              As Long
+        Public Property Id As Long
 
-        Public Property SignalId        As Long
-        Public Property OrderId         As Long?
+        Public Property SignalId As Long
+        Public Property OrderId As Long?
         <MaxLength(50)>
-        Public Property ContractId      As String = String.Empty
-        Public Property Timeframe       As Integer
+        Public Property ContractId As String = String.Empty
+        Public Property Timeframe As Integer
 
         <MaxLength(10)>
-        Public Property SignalType      As String = String.Empty
+        Public Property SignalType As String = String.Empty
 
         Public Property SignalConfidence As Single
 
         <MaxLength(50)>
-        Public Property ModelVersion    As String = String.Empty
+        Public Property ModelVersion As String = String.Empty
 
-        Public Property EntryTime       As DateTimeOffset
+        Public Property EntryTime As DateTimeOffset
         <Column(TypeName:="decimal(18,4)")>
-        Public Property EntryPrice      As Decimal
+        Public Property EntryPrice As Decimal
 
-        Public Property ExitTime        As DateTimeOffset?
+        Public Property ExitTime As DateTimeOffset?
         <Column(TypeName:="decimal(18,4)")>
-        Public Property ExitPrice       As Decimal?
+        Public Property ExitPrice As Decimal?
 
         <Column(TypeName:="decimal(18,4)")>
-        Public Property PnL             As Decimal?
+        Public Property PnL As Decimal?
 
-        Public Property IsWinner        As Boolean?
+        Public Property IsWinner As Boolean?
 
         <MaxLength(50)>
-        Public Property ExitReason      As String = String.Empty
+        Public Property ExitReason As String = String.Empty
 
-        Public Property IsOpen          As Boolean = True
-        Public Property CreatedAt       As DateTimeOffset = DateTimeOffset.UtcNow
+        Public Property IsOpen As Boolean = True
+        Public Property CreatedAt As DateTimeOffset = DateTimeOffset.UtcNow
 
     End Class
 

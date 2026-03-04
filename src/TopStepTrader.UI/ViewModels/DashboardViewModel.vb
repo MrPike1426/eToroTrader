@@ -1,6 +1,6 @@
 Imports System.Collections.ObjectModel
 Imports System.Windows
-Imports System.Windows.Threading
+Imports Microsoft.Extensions.Logging
 Imports Microsoft.Extensions.Options
 Imports TopStepTrader.Core.Enums
 Imports TopStepTrader.Core.Events
@@ -12,16 +12,19 @@ Imports TopStepTrader.UI.ViewModels.Base
 Namespace TopStepTrader.UI.ViewModels
 
     ''' <summary>
-    ''' Dashboard — summary of account health, daily P&amp;L, drawdown, and last signal.
+    ''' Dashboard — summary of account health, daily P&amp;L, drawdown, and balance history.
     ''' Subscribes to IRiskGuardService events for real-time halt status updates.
     ''' </summary>
     Public Class DashboardViewModel
         Inherits ViewModelBase
 
-        Private ReadOnly _accountService  As IAccountService
-        Private ReadOnly _riskGuard       As IRiskGuardService
-        Private ReadOnly _signalService   As ISignalService
-        Private ReadOnly _riskSettings    As RiskSettings
+        Private ReadOnly _accountService As IAccountService
+        Private ReadOnly _authService As IAuthService
+        Private ReadOnly _riskGuard As IRiskGuardService
+        Private ReadOnly _signalService As ISignalService
+        Private ReadOnly _balanceHistoryService As IBalanceHistoryService
+        Private ReadOnly _riskSettings As RiskSettings
+        Private ReadOnly _logger As ILogger(Of DashboardViewModel)
 
         ' ── Bindable properties ──────────────────────────────────────────────
 
@@ -42,6 +45,35 @@ Namespace TopStepTrader.UI.ViewModels
             End Get
             Set(value As Decimal)
                 SetProperty(_balance, value)
+            End Set
+        End Property
+
+        Private _accounts As New ObservableCollection(Of TopStepTrader.Core.Models.Account)
+        Public Property Accounts As ObservableCollection(Of TopStepTrader.Core.Models.Account)
+            Get
+                Return _accounts
+            End Get
+            Set(value As ObservableCollection(Of TopStepTrader.Core.Models.Account))
+                If Not Object.Equals(_accounts, value) Then
+                    _accounts = value
+                    OnPropertyChanged(NameOf(Accounts))
+                End If
+            End Set
+        End Property
+
+        Private _selectedAccount As TopStepTrader.Core.Models.Account
+        Public Property SelectedAccount As TopStepTrader.Core.Models.Account
+            Get
+                Return _selectedAccount
+            End Get
+            Set(value As TopStepTrader.Core.Models.Account)
+                If SetProperty(_selectedAccount, value) Then
+                    ' Update balance and account name when account selection changes
+                    If value IsNot Nothing Then
+                        AccountName = value.Name
+                        Balance = value.Balance
+                    End If
+                End If
             End Set
         End Property
 
@@ -89,38 +121,6 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
-        Private _lastSignalType As SignalType = SignalType.Hold
-        Public Property LastSignalType As SignalType
-            Get
-                Return _lastSignalType
-            End Get
-            Set(value As SignalType)
-                SetProperty(_lastSignalType, value)
-                OnPropertyChanged(NameOf(LastSignalText))
-                OnPropertyChanged(NameOf(LastSignalColor))
-            End Set
-        End Property
-
-        Private _lastSignalConfidence As Single
-        Public Property LastSignalConfidence As Single
-            Get
-                Return _lastSignalConfidence
-            End Get
-            Set(value As Single)
-                SetProperty(_lastSignalConfidence, value)
-            End Set
-        End Property
-
-        Private _lastSignalTime As String = "—"
-        Public Property LastSignalTime As String
-            Get
-                Return _lastSignalTime
-            End Get
-            Set(value As String)
-                SetProperty(_lastSignalTime, value)
-            End Set
-        End Property
-
         Private _statusMessage As String = "Loading..."
         Public Property StatusMessage As String
             Get
@@ -128,6 +128,19 @@ Namespace TopStepTrader.UI.ViewModels
             End Get
             Set(value As String)
                 SetProperty(_statusMessage, value)
+            End Set
+        End Property
+
+        Private _balanceHistoryRows As New ObservableCollection(Of BalanceHistoryRow)
+        Public Property BalanceHistoryRows As ObservableCollection(Of BalanceHistoryRow)
+            Get
+                Return _balanceHistoryRows
+            End Get
+            Set(value As ObservableCollection(Of BalanceHistoryRow))
+                If Not Object.Equals(_balanceHistoryRows, value) Then
+                    _balanceHistoryRows = value
+                    OnPropertyChanged(NameOf(BalanceHistoryRows))
+                End If
             End Set
         End Property
 
@@ -157,26 +170,6 @@ Namespace TopStepTrader.UI.ViewModels
             End Get
         End Property
 
-        Public ReadOnly Property LastSignalText As String
-            Get
-                Select Case _lastSignalType
-                    Case SignalType.Buy  : Return "▲ BUY"
-                    Case SignalType.Sell : Return "▼ SELL"
-                    Case Else            : Return "— HOLD"
-                End Select
-            End Get
-        End Property
-
-        Public ReadOnly Property LastSignalColor As String
-            Get
-                Select Case _lastSignalType
-                    Case SignalType.Buy  : Return "BuyBrush"
-                    Case SignalType.Sell : Return "SellBrush"
-                    Case Else            : Return "TextSecondaryBrush"
-                End Select
-            End Get
-        End Property
-
         Public ReadOnly Property DailyLossLimit As Decimal
             Get
                 Return _riskSettings.DailyLossLimitDollars
@@ -189,26 +182,110 @@ Namespace TopStepTrader.UI.ViewModels
             End Get
         End Property
 
+        ' ── Settings (Auto-Execution & Risk Guard) ──────────────────────────
+
+        Private _autoExecutionEnabled As Boolean = True
+        Public Property AutoExecutionEnabled As Boolean
+            Get
+                Return _autoExecutionEnabled
+            End Get
+            Set(value As Boolean)
+                SetProperty(_autoExecutionEnabled, value)
+                ' Immediately apply to the live settings object
+                _riskSettings.AutoExecutionEnabled = value
+            End Set
+        End Property
+
+        Private _dailyLossLimitEditable As String
+        Public Property DailyLossLimitEditable As String
+            Get
+                Return _dailyLossLimitEditable
+            End Get
+            Set(value As String)
+                SetProperty(_dailyLossLimitEditable, value)
+            End Set
+        End Property
+
+        Private _maxPositionEditable As String
+        Public Property MaxPositionEditable As String
+            Get
+                Return _maxPositionEditable
+            End Get
+            Set(value As String)
+                SetProperty(_maxPositionEditable, value)
+            End Set
+        End Property
+
+        Private _minConfidenceEditable As String
+        Public Property MinConfidenceEditable As String
+            Get
+                Return _minConfidenceEditable
+            End Get
+            Set(value As String)
+                SetProperty(_minConfidenceEditable, value)
+            End Set
+        End Property
+
+        Private _isConnected As Boolean
+        Public Property IsConnected As Boolean
+            Get
+                Return _isConnected
+            End Get
+            Set(value As Boolean)
+                SetProperty(_isConnected, value)
+                OnPropertyChanged(NameOf(ConnectionStatusText))
+                OnPropertyChanged(NameOf(ConnectionStatusColor))
+            End Set
+        End Property
+
+        Public ReadOnly Property ConnectionStatusText As String
+            Get
+                Return If(_isConnected, "Connected", "Disconnected")
+            End Get
+        End Property
+
+        Public ReadOnly Property ConnectionStatusColor As String
+            Get
+                Return If(_isConnected, "BuyBrush", "SellBrush")
+            End Get
+        End Property
+
         ' ── Commands ─────────────────────────────────────────────────────────
 
         Public ReadOnly Property RefreshCommand As RelayCommand
+        Public ReadOnly Property ApplyRiskCommand As RelayCommand
+        Public ReadOnly Property ConnectCommand As RelayCommand
 
         ' ── Constructor ──────────────────────────────────────────────────────
 
         Public Sub New(accountService As IAccountService,
+                       authService As IAuthService,
                        riskGuard As IRiskGuardService,
                        signalService As ISignalService,
-                       riskOptions As IOptions(Of RiskSettings))
+                       balanceHistoryService As IBalanceHistoryService,
+                       riskOptions As IOptions(Of RiskSettings),
+                       logger As ILogger(Of DashboardViewModel))
             _accountService = accountService
+            _authService = authService
             _riskGuard = riskGuard
             _signalService = signalService
+            _balanceHistoryService = balanceHistoryService
             _riskSettings = riskOptions.Value
+            _logger = logger
+
+            ' Initialize settings
+            _autoExecutionEnabled = True
+            _dailyLossLimitEditable = _riskSettings.DailyLossLimitDollars.ToString()
+            _maxPositionEditable = _riskSettings.MaxPositionSizeContracts.ToString()
+            _minConfidenceEditable = _riskSettings.MinSignalConfidence.ToString("F2")
+            _isConnected = _authService.IsAuthenticated
 
             RefreshCommand = New RelayCommand(AddressOf LoadData)
+            ApplyRiskCommand = New RelayCommand(AddressOf ExecuteApplyRisk)
+            ConnectCommand = New RelayCommand(AddressOf ExecuteConnect)
 
-            AddHandler _riskGuard.TradingHalted,  AddressOf OnTradingHalted
+            AddHandler _riskGuard.TradingHalted, AddressOf OnTradingHalted
             AddHandler _riskGuard.TradingResumed, AddressOf OnTradingResumed
-            AddHandler _signalService.SignalGenerated, AddressOf OnSignalGenerated
         End Sub
 
         ' ── Data loading ─────────────────────────────────────────────────────
@@ -224,14 +301,33 @@ Namespace TopStepTrader.UI.ViewModels
         Private Async Function LoadDataInternal() As Task
             Try
                 ' Load accounts
-                Dim accounts = Await _accountService.GetActiveAccountsAsync()
-                Dim first = accounts.FirstOrDefault()
-                If first IsNot Nothing Then
-                    Dispatch(Sub()
-                                 AccountName = first.Name
-                                 Balance = first.Balance
-                             End Sub)
+                Dim accountList = Await _accountService.GetActiveAccountsAsync()
+
+                ' Populate accounts collection and select default (Practice account preferred)
+                Dispatch(Sub()
+                             _accounts.Clear()
+                             For Each account In accountList
+                                 _accounts.Add(account)
+                             Next
+
+                             ' Default to Practice account (PRAC-*) if available, otherwise first account
+                             ' CRITICAL FIX (TICKET-021): Get reference from _accounts collection, not accountList
+                             ' This ensures WPF binding recognizes the selected item as existing in ItemsSource
+                             Dim practiceAccount = _accounts.FirstOrDefault(Function(a) a.Name.StartsWith("PRAC-", StringComparison.OrdinalIgnoreCase))
+                             SelectedAccount = If(practiceAccount, _accounts.FirstOrDefault())
+                         End Sub)
+
+                ' Record current balance in history for selected account
+                If SelectedAccount IsNot Nothing Then
+                    Await _balanceHistoryService.RecordBalanceAsync(
+                        SelectedAccount.Id,
+                        SelectedAccount.Name,
+                        SelectedAccount.Balance,
+                        DateTime.UtcNow)
                 End If
+
+                ' Load balance history (last 5 days)
+                Await LoadBalanceHistoryAsync(accountList)
 
                 ' Load risk metrics
                 Dim pnl = Await _riskGuard.GetDailyPnLAsync()
@@ -243,20 +339,56 @@ Namespace TopStepTrader.UI.ViewModels
                              HaltReason = _riskGuard.HaltReason
                          End Sub)
 
-                ' Last signal
-                Dim last = _signalService.LastSignal
-                If last IsNot Nothing Then
-                    Dispatch(Sub()
-                                 LastSignalType = last.SignalType
-                                 LastSignalConfidence = last.Confidence
-                                 LastSignalTime = last.GeneratedAt.LocalDateTime.ToString("HH:mm:ss")
-                             End Sub)
-                End If
-
                 Dispatch(Sub() StatusMessage = $"Updated {DateTime.Now:HH:mm:ss}")
 
             Catch ex As Exception
                 Dispatch(Sub() StatusMessage = $"Error: {ex.Message}")
+            End Try
+        End Function
+
+        Private Async Function LoadBalanceHistoryAsync(accounts As IEnumerable(Of Account)) As Task
+            Try
+                ' Get last 5 days of history for all accounts
+                Dim history = Await _balanceHistoryService.GetAllAccountsRecentHistoryAsync(5)
+
+                Dispatch(Sub()
+                             _balanceHistoryRows.Clear()
+
+                             For Each account In accounts
+                                 Dim row = New BalanceHistoryRow With {
+                                     .AccountName = account.Name,
+                                     .CurrentBalance = account.Balance
+                                 }
+
+                                 ' Populate history dates (last 5 days)
+                                 If history.ContainsKey(account.Id) Then
+                                     Dim accountHistory = history(account.Id).OrderByDescending(Function(h) h.RecordedDate).ToList()
+
+                                     ' Get balances for past 5 days
+                                     For i = 0 To 4
+                                         Dim dayAgo = DateTime.UtcNow.AddDays(-(i + 1)).Date
+                                         Dim balance = accountHistory.FirstOrDefault(Function(h) h.RecordedDate = dayAgo)
+                                         Select Case i
+                                             Case 0
+                                                 row.Date1Balance = If(balance IsNot Nothing, balance.Balance, CDec(0))
+                                             Case 1
+                                                 row.Date2Balance = If(balance IsNot Nothing, balance.Balance, CDec(0))
+                                             Case 2
+                                                 row.Date3Balance = If(balance IsNot Nothing, balance.Balance, CDec(0))
+                                             Case 3
+                                                 row.Date4Balance = If(balance IsNot Nothing, balance.Balance, CDec(0))
+                                             Case 4
+                                                 row.Date5Balance = If(balance IsNot Nothing, balance.Balance, CDec(0))
+                                         End Select
+                                     Next
+                                 End If
+
+                                 _balanceHistoryRows.Add(row)
+                             Next
+                         End Sub)
+
+            Catch ex As Exception
+                _logger.LogError(ex, "Error loading balance history")
             End Try
         End Function
 
@@ -278,12 +410,46 @@ Namespace TopStepTrader.UI.ViewModels
                      End Sub)
         End Sub
 
-        Private Sub OnSignalGenerated(sender As Object, e As SignalGeneratedEventArgs)
-            Dispatch(Sub()
-                         LastSignalType = e.Signal.SignalType
-                         LastSignalConfidence = e.Signal.Confidence
-                         LastSignalTime = e.Signal.GeneratedAt.LocalDateTime.ToString("HH:mm:ss")
-                     End Sub)
+        ' ── Settings command handlers ────────────────────────────────────────
+
+        Private Sub ExecuteApplyRisk(param As Object)
+            Try
+                ' Parse and apply risk settings
+                Dim dllimit As Decimal
+                If Decimal.TryParse(_dailyLossLimitEditable, dllimit) Then
+                    _riskSettings.DailyLossLimitDollars = dllimit
+                End If
+
+                Dim maxpos As Integer
+                If Integer.TryParse(_maxPositionEditable, maxpos) Then
+                    _riskSettings.MaxPositionSizeContracts = maxpos
+                End If
+
+                Dim minconf As Decimal
+                If Decimal.TryParse(_minConfidenceEditable, minconf) Then
+                    _riskSettings.MinSignalConfidence = minconf
+                End If
+
+                StatusMessage = "✓ Risk settings applied"
+            Catch ex As Exception
+                StatusMessage = $"Error applying settings: {ex.Message}"
+            End Try
+        End Sub
+
+        Private Sub ExecuteConnect(param As Object)
+            Task.Run(Async Function()
+                         Try
+                             Dispatch(Sub() StatusMessage = "Connecting...")
+                             Dim token = Await _authService.LoginAsync("", "")
+                             Dispatch(Sub()
+                                          IsConnected = _authService.IsAuthenticated
+                                          StatusMessage = If(IsConnected, "✓ Connected successfully", "Connection failed")
+                                      End Sub)
+                         Catch ex As Exception
+                             Dispatch(Sub() StatusMessage = $"Connection error: {ex.Message}")
+                         End Try
+                         Return Task.CompletedTask
+                     End Function)
         End Sub
 
         Private Sub Dispatch(action As Action)
@@ -292,6 +458,19 @@ Namespace TopStepTrader.UI.ViewModels
             End If
         End Sub
 
+    End Class
+
+    ''' <summary>
+    ''' Represents a single row in the balance history table.
+    ''' </summary>
+    Public Class BalanceHistoryRow
+        Public Property AccountName As String = String.Empty
+        Public Property CurrentBalance As Decimal
+        Public Property Date1Balance As Decimal
+        Public Property Date2Balance As Decimal
+        Public Property Date3Balance As Decimal
+        Public Property Date4Balance As Decimal
+        Public Property Date5Balance As Decimal
     End Class
 
 End Namespace

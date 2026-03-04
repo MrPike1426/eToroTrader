@@ -25,12 +25,22 @@
                            Margin="16,0,16,24" TextWrapping="Wrap"/>
 
                 <Button Content="📊  Dashboard"    Tag="Dashboard"   Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
+                <Button Content="⚡  AI Trade"     Tag="AiTrading"   Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
+                <Button Content="🎯  Sniper"       Tag="Sniper"      Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
+                <Button Content="🔬  Backtest"     Tag="Backtest"    Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
+                <Button Content="📋  Orders"       Tag="Orders"      Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
+                <Button Content="🧪  Test Trade"   Tag="TestTrade"   Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
+
+                <!-- To Do Section Separator -->
+                <Border Margin="16,16,16,8" Height="1" Background="{StaticResource BorderBrush}" Opacity="0.4"/>
+                <TextBlock Text="  TO DO"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="10" FontWeight="SemiBold"
+                           Margin="16,4,16,8" Opacity="0.55"/>
+
                 <Button Content="📈  Market Data"  Tag="Market"      Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
                 <Button Content="🤖  AI Signals"   Tag="Signals"     Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
-                <Button Content="📋  Orders"        Tag="Orders"      Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
                 <Button Content="🛡️  Risk Guard"   Tag="Risk"        Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
-                <Button Content="🔬  Backtest"      Tag="Backtest"    Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
-                <Button Content="⚙️  Settings"      Tag="Settings"    Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
 
                 <!-- Connection Status -->
                 <Border Margin="16,20,16,8" CornerRadius="4"

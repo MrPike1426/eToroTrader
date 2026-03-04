@@ -1,6 +1,5 @@
 Imports System.Windows
 Imports Microsoft.Extensions.Options
-Imports TopStepTrader.Core.Enums
 Imports TopStepTrader.Core.Events
 Imports TopStepTrader.Core.Interfaces
 Imports TopStepTrader.Core.Settings
@@ -15,7 +14,7 @@ Namespace TopStepTrader.UI.ViewModels
     Public Class RiskGuardViewModel
         Inherits ViewModelBase
 
-        Private ReadOnly _riskGuard    As IRiskGuardService
+        Private ReadOnly _riskGuard As IRiskGuardService
         Private ReadOnly _riskSettings As RiskSettings
 
         ' ── Bindable properties ──────────────────────────────────────────────
@@ -151,21 +150,21 @@ Namespace TopStepTrader.UI.ViewModels
 
         ' ── Commands ─────────────────────────────────────────────────────────
 
-        Public ReadOnly Property RefreshCommand    As RelayCommand
-        Public ReadOnly Property ResetHaltCommand  As RelayCommand
+        Public ReadOnly Property RefreshCommand As RelayCommand
+        Public ReadOnly Property ResetHaltCommand As RelayCommand
 
         ' ── Constructor ──────────────────────────────────────────────────────
 
         Public Sub New(riskGuard As IRiskGuardService,
                        riskOptions As IOptions(Of RiskSettings))
-            _riskGuard    = riskGuard
+            _riskGuard = riskGuard
             _riskSettings = riskOptions.Value
 
-            RefreshCommand   = New RelayCommand(AddressOf LoadMetrics)
+            RefreshCommand = New RelayCommand(AddressOf LoadMetrics)
             ResetHaltCommand = New RelayCommand(AddressOf ExecuteResetHalt,
                                                  Function() CanReset)
 
-            AddHandler _riskGuard.TradingHalted,  AddressOf OnHalted
+            AddHandler _riskGuard.TradingHalted, AddressOf OnHalted
             AddHandler _riskGuard.TradingResumed, AddressOf OnResumed
         End Sub
 
@@ -177,11 +176,11 @@ Namespace TopStepTrader.UI.ViewModels
             Task.Run(Async Function()
                          Try
                              Dim pnl = Await _riskGuard.GetDailyPnLAsync()
-                             Dim dd  = Await _riskGuard.GetCurrentDrawdownAsync()
+                             Dim dd = Await _riskGuard.GetCurrentDrawdownAsync()
                              Dispatch(Sub()
-                                          DailyPnL  = pnl
-                                          Drawdown   = dd
-                                          IsHalted   = _riskGuard.IsHalted
+                                          DailyPnL = pnl
+                                          Drawdown = dd
+                                          IsHalted = _riskGuard.IsHalted
                                           HaltReason = _riskGuard.HaltReason.ToString()
                                           StatusText = $"Updated {DateTime.Now:HH:mm:ss}"
                                       End Sub)
@@ -208,16 +207,16 @@ Namespace TopStepTrader.UI.ViewModels
 
         Private Sub OnHalted(sender As Object, e As RiskHaltEventArgs)
             Dispatch(Sub()
-                         IsHalted   = True
+                         IsHalted = True
                          HaltReason = e.Reason.ToString()
-                         DailyPnL   = e.DailyPnL
-                         Drawdown   = e.Drawdown
+                         DailyPnL = e.DailyPnL
+                         Drawdown = e.Drawdown
                      End Sub)
         End Sub
 
         Private Sub OnResumed(sender As Object, e As EventArgs)
             Dispatch(Sub()
-                         IsHalted   = False
+                         IsHalted = False
                          HaltReason = "None"
                      End Sub)
         End Sub

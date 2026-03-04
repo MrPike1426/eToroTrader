@@ -1,4 +1,3 @@
-Imports System.Threading
 Imports Microsoft.Extensions.Logging
 Imports Microsoft.Extensions.Options
 Imports TopStepTrader.Core.Enums
@@ -6,7 +5,6 @@ Imports TopStepTrader.Core.Events
 Imports TopStepTrader.Core.Interfaces
 Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Core.Settings
-Imports TopStepTrader.Data.Entities
 Imports TopStepTrader.Data.Repositories
 
 Namespace TopStepTrader.Services.Risk

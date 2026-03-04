@@ -19,24 +19,28 @@ Namespace TopStepTrader.Services.Background
     Public Class BarIngestionWorker
         Implements IHostedService, IDisposable
 
-        Private ReadOnly _scopeFactory    As IServiceScopeFactory
+        Private ReadOnly _scopeFactory As IServiceScopeFactory
         Private ReadOnly _tradingSettings As TradingSettings
-        Private ReadOnly _logger          As ILogger(Of BarIngestionWorker)
+        Private ReadOnly _logger As ILogger(Of BarIngestionWorker)
         Private _timer As System.Threading.Timer
         Private _disposed As Boolean = False
 
         Public Property Timeframe As BarTimeframe = BarTimeframe.FiveMinute
 
-        Public Sub New(scopeFactory    As IServiceScopeFactory,
-                       tradingOptions  As IOptions(Of TradingSettings),
-                       logger          As ILogger(Of BarIngestionWorker))
-            _scopeFactory    = scopeFactory
+        Public Sub New(scopeFactory As IServiceScopeFactory,
+                       tradingOptions As IOptions(Of TradingSettings),
+                       logger As ILogger(Of BarIngestionWorker))
+            _scopeFactory = scopeFactory
             _tradingSettings = tradingOptions.Value
-            _logger          = logger
+            _logger = logger
         End Sub
 
         Public Function StartAsync(cancellationToken As CancellationToken) As Task _
             Implements IHostedService.StartAsync
+            If Not _tradingSettings.EnableBackgroundIngestion Then
+                _logger.LogInformation("BarIngestionWorker: disabled via EnableBackgroundIngestion setting, not starting")
+                Return Task.CompletedTask
+            End If
             _logger.LogInformation("BarIngestionWorker started (contracts: {Ids})",
                                    String.Join(", ", _tradingSettings.ActiveContractIds))
             _timer = New System.Threading.Timer(

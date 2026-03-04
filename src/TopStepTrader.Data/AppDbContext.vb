@@ -1,3 +1,4 @@
+Imports System.Data
 Imports Microsoft.EntityFrameworkCore
 Imports TopStepTrader.Data.Entities
 
@@ -10,13 +11,14 @@ Namespace TopStepTrader.Data
             MyBase.New(options)
         End Sub
 
-        Public Property Bars          As DbSet(Of BarEntity)
-        Public Property Signals       As DbSet(Of SignalEntity)
-        Public Property Orders        As DbSet(Of OrderEntity)
-        Public Property BacktestRuns  As DbSet(Of BacktestRunEntity)
+        Public Property Bars As DbSet(Of BarEntity)
+        Public Property Signals As DbSet(Of SignalEntity)
+        Public Property Orders As DbSet(Of OrderEntity)
+        Public Property BacktestRuns As DbSet(Of BacktestRunEntity)
         Public Property BacktestTrades As DbSet(Of BacktestTradeEntity)
-        Public Property RiskEvents    As DbSet(Of RiskEventEntity)
+        Public Property RiskEvents As DbSet(Of RiskEventEntity)
         Public Property TradeOutcomes As DbSet(Of TradeOutcomeEntity)
+        Public Property BalanceHistory As DbSet(Of BalanceHistoryEntity)
 
         Protected Overrides Sub OnModelCreating(modelBuilder As ModelBuilder)
             MyBase.OnModelCreating(modelBuilder)
@@ -69,6 +71,104 @@ Namespace TopStepTrader.Data
                 .HasIndex(Function(o) o.SignalId) _
                 .HasDatabaseName("IX_TradeOutcomes_SignalId")
 
+            ' BalanceHistory — explicitly configure the table and index
+            modelBuilder.Entity(Of BalanceHistoryEntity)() _
+                .ToTable("BalanceHistory") _
+                .HasKey(Function(b) b.Id)
+
+            modelBuilder.Entity(Of BalanceHistoryEntity)() _
+                .HasIndex(Function(b) New With {b.AccountId, b.RecordedDate}) _
+                .HasDatabaseName("IX_BalanceHistory_AccountId_Date")
+
+        End Sub
+
+        ''' <summary>
+        ''' Idempotent schema migration for tables added after the initial DB was created.
+        ''' Each CREATE TABLE / CREATE INDEX uses IF NOT EXISTS — safe to call on every startup.
+        ''' </summary>
+        Public Sub EnsureSchemaCurrent()
+            Dim conn = Database.GetDbConnection()
+            Dim mustClose = (conn.State <> ConnectionState.Open)
+            If mustClose Then conn.Open()
+            Try
+                For Each ddl In New String() {
+                    "CREATE TABLE IF NOT EXISTS ""TradeOutcomes"" (
+                         ""Id""               INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                         ""SignalId""          INTEGER NOT NULL DEFAULT 0,
+                         ""OrderId""           INTEGER,
+                         ""ContractId""        TEXT    NOT NULL DEFAULT '',
+                         ""Timeframe""         INTEGER NOT NULL DEFAULT 0,
+                         ""SignalType""        TEXT    NOT NULL DEFAULT '',
+                         ""SignalConfidence""  REAL    NOT NULL DEFAULT 0,
+                         ""ModelVersion""      TEXT    NOT NULL DEFAULT '',
+                         ""EntryTime""         TEXT    NOT NULL DEFAULT '',
+                         ""EntryPrice""        TEXT    NOT NULL DEFAULT '0',
+                         ""ExitTime""          TEXT,
+                         ""ExitPrice""         TEXT,
+                         ""PnL""               TEXT,
+                         ""IsWinner""          INTEGER,
+                         ""ExitReason""        TEXT    NOT NULL DEFAULT '',
+                         ""IsOpen""            INTEGER NOT NULL DEFAULT 1,
+                         ""CreatedAt""         TEXT    NOT NULL DEFAULT '')",
+                    "CREATE INDEX IF NOT EXISTS ""IX_TradeOutcomes_IsOpen_EntryTime"" ON ""TradeOutcomes"" (""IsOpen"", ""EntryTime"")",
+                    "CREATE INDEX IF NOT EXISTS ""IX_TradeOutcomes_SignalId"" ON ""TradeOutcomes"" (""SignalId"")",
+                    "CREATE TABLE IF NOT EXISTS ""BacktestRuns"" (
+                         ""Id""                  INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                         ""RunName""              TEXT    NOT NULL DEFAULT '',
+                         ""ContractId""           TEXT    NOT NULL DEFAULT '',
+                         ""Timeframe""            INTEGER NOT NULL DEFAULT 0,
+                         ""StartDate""            TEXT    NOT NULL DEFAULT '',
+                         ""EndDate""              TEXT    NOT NULL DEFAULT '',
+                         ""InitialCapital""       TEXT    NOT NULL DEFAULT '0',
+                         ""ModelVersion""         TEXT,
+                         ""ParametersJson""       TEXT,
+                         ""TotalTrades""          INTEGER NOT NULL DEFAULT 0,
+                         ""WinningTrades""        INTEGER NOT NULL DEFAULT 0,
+                         ""LosingTrades""         INTEGER NOT NULL DEFAULT 0,
+                         ""TotalPnL""             TEXT    NOT NULL DEFAULT '0',
+                         ""FinalCapital""         TEXT    NOT NULL DEFAULT '0',
+                         ""MaxDrawdown""          TEXT    NOT NULL DEFAULT '0',
+                         ""AveragePnLPerTrade""   TEXT    NOT NULL DEFAULT '0',
+                         ""SharpeRatio""          REAL,
+                         ""WinRate""              REAL,
+                         ""Status""               INTEGER NOT NULL DEFAULT 0,
+                         ""CompletedAt""          TEXT,
+                         ""CreatedAt""            TEXT    NOT NULL DEFAULT '')",
+                    "CREATE TABLE IF NOT EXISTS ""BacktestTrades"" (
+                         ""Id""               INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                         ""BacktestRunId""    INTEGER NOT NULL,
+                         ""EntryTime""        TEXT    NOT NULL DEFAULT '',
+                         ""ExitTime""         TEXT,
+                         ""Side""             TEXT    NOT NULL DEFAULT '',
+                         ""EntryPrice""       TEXT    NOT NULL DEFAULT '0',
+                         ""ExitPrice""        TEXT,
+                         ""Quantity""         INTEGER NOT NULL DEFAULT 1,
+                         ""PnL""              TEXT,
+                         ""ExitReason""       TEXT,
+                         ""SignalConfidence""  REAL,
+                         CONSTRAINT ""FK_BacktestTrades_BacktestRuns_BacktestRunId""
+                             FOREIGN KEY (""BacktestRunId"")
+                             REFERENCES ""BacktestRuns"" (""Id"") ON DELETE CASCADE)",
+                    "CREATE INDEX IF NOT EXISTS ""IX_BacktestTrades_RunId"" ON ""BacktestTrades"" (""BacktestRunId"")",
+                    "CREATE TABLE IF NOT EXISTS ""RiskEvents"" (
+                         ""Id""              INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                         ""OccurredAt""      TEXT    NOT NULL DEFAULT '',
+                         ""EventType""       TEXT    NOT NULL DEFAULT '',
+                         ""DailyPnLAtEvent"" TEXT,
+                         ""DrawdownAtEvent"" TEXT,
+                         ""RuleValue""       TEXT,
+                         ""AccountId""       INTEGER,
+                         ""DetailsJson""     TEXT,
+                         ""Acknowledged""    INTEGER NOT NULL DEFAULT 0)"
+                }
+                    Using cmd = conn.CreateCommand()
+                        cmd.CommandText = ddl
+                        cmd.ExecuteNonQuery()
+                    End Using
+                Next
+            Finally
+                If mustClose Then conn.Close()
+            End Try
         End Sub
 
     End Class

@@ -23,39 +23,40 @@ Namespace TopStepTrader.Services.Feedback
     Public Class ModelTrainingService
         Implements IModelTrainingService
 
-        Private ReadOnly _outcomeRepo      As TradeOutcomeRepository
-        Private ReadOnly _barRepo          As BarRepository
-        Private ReadOnly _trainer          As SignalModelTrainer
+        Private ReadOnly _outcomeRepo As TradeOutcomeRepository
+        Private ReadOnly _barRepo As BarRepository
+        Private ReadOnly _trainer As SignalModelTrainer
         Private ReadOnly _featureExtractor As BarFeatureExtractor
-        Private ReadOnly _modelManager     As ModelManager
-        Private ReadOnly _mlSettings       As MLSettings
-        Private ReadOnly _tradingSettings  As TradingSettings
-        Private ReadOnly _logger           As ILogger(Of ModelTrainingService)
+        Private ReadOnly _modelManager As ModelManager
+        Private ReadOnly _mlSettings As MLSettings
+        Private ReadOnly _tradingSettings As TradingSettings
+        Private ReadOnly _logger As ILogger(Of ModelTrainingService)
 
         Public Event ModelRetrained As EventHandler(Of ModelRetrainedEventArgs) _
             Implements IModelTrainingService.ModelRetrained
 
-        Public Sub New(outcomeRepo      As TradeOutcomeRepository,
-                       barRepo          As BarRepository,
-                       trainer          As SignalModelTrainer,
+        Public Sub New(outcomeRepo As TradeOutcomeRepository,
+                       barRepo As BarRepository,
+                       trainer As SignalModelTrainer,
                        featureExtractor As BarFeatureExtractor,
-                       modelManager     As ModelManager,
-                       mlOptions        As IOptions(Of MLSettings),
-                       tradingOptions   As IOptions(Of TradingSettings),
-                       logger           As ILogger(Of ModelTrainingService))
-            _outcomeRepo      = outcomeRepo
-            _barRepo          = barRepo
-            _trainer          = trainer
+                       modelManager As ModelManager,
+                       mlOptions As IOptions(Of MLSettings),
+                       tradingOptions As IOptions(Of TradingSettings),
+                       logger As ILogger(Of ModelTrainingService))
+            _outcomeRepo = outcomeRepo
+            _barRepo = barRepo
+            _trainer = trainer
             _featureExtractor = featureExtractor
-            _modelManager     = modelManager
-            _mlSettings       = mlOptions.Value
-            _tradingSettings  = tradingOptions.Value
-            _logger           = logger
+            _modelManager = modelManager
+            _mlSettings = mlOptions.Value
+            _tradingSettings = tradingOptions.Value
+            _logger = logger
         End Sub
 
         ' ── IModelTrainingService ─────────────────────────────────────────────
 
-        Public Async Function RetrainAsync(cancel As CancellationToken) _
+        Public Async Function RetrainAsync(cancel As CancellationToken,
+                                           Optional contractId As String = Nothing) _
             As Task(Of ModelMetrics) Implements IModelTrainingService.RetrainAsync
 
             _logger.LogInformation("Starting model retraining with feedback data...")
@@ -65,15 +66,28 @@ Namespace TopStepTrader.Services.Feedback
             Dim outcomes = Await _outcomeRepo.GetResolvedOutcomesAsync(from)
             _logger.LogInformation("Found {Count} resolved outcomes for retraining", outcomes.Count)
 
-            ' 2. Get historical bar data (last 3 months) for base training
-            Dim barFrom     = DateTimeOffset.UtcNow.AddMonths(-3)
-            Dim tf          = CType(_tradingSettings.DefaultTimeframe, BarTimeframe)
-            Dim contractIds = _tradingSettings.ActiveContractIds
+            ' 2. Get historical bar data (last 3 months) for base training.
+            '    UAT-BUG-004: When an explicit contractId is supplied (backtest context) use only
+            '    that contract's bars.  Otherwise fall back to TradingSettings.ActiveContractIds
+            '    (live-trading default).  Avoids the mismatch where the backtest page downloads
+            '    bars for the user-selected contract but training queried a different config list.
+            Dim barFrom = DateTimeOffset.UtcNow.AddMonths(-3)
+            Dim tf = CType(_tradingSettings.DefaultTimeframe, BarTimeframe)
+
+            Dim contractIds As IEnumerable(Of String)
+            If Not String.IsNullOrWhiteSpace(contractId) Then
+                contractIds = {contractId}
+                _logger.LogInformation("RetrainAsync: using explicit contractId={ContractId}", contractId)
+            Else
+                contractIds = _tradingSettings.ActiveContractIds
+                _logger.LogInformation("RetrainAsync: using ActiveContractIds ({Count} entries)",
+                                       _tradingSettings.ActiveContractIds.Count)
+            End If
 
             Dim allBars As New List(Of MarketBar)()
-            For Each contractId In contractIds
+            For Each cid In contractIds
                 If cancel.IsCancellationRequested Then Throw New OperationCanceledException(cancel)
-                Dim bars = Await _barRepo.GetBarsAsync(contractId, tf, barFrom, DateTimeOffset.UtcNow, cancel)
+                Dim bars = Await _barRepo.GetBarsAsync(cid, tf, barFrom, DateTimeOffset.UtcNow, cancel)
                 allBars.AddRange(bars)
             Next
 

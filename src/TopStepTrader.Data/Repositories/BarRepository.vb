@@ -1,9 +1,13 @@
+Option Compare Binary
+Option Strict On
+Option Explicit On
+
 Imports System.Data
 Imports System.Threading
 Imports Microsoft.EntityFrameworkCore
 Imports Microsoft.Extensions.Logging
-Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Core.Enums
+Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Data.Entities
 
 Namespace TopStepTrader.Data.Repositories
@@ -18,55 +22,98 @@ Namespace TopStepTrader.Data.Repositories
             _logger = logger
         End Sub
 
+        ' EF Core 9 SQLite stores DateTimeOffset via DateTimeOffsetToStringConverter
+        ' using the format "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz" (space not T, capital F = no
+        ' trailing zeros in fractional part, zzz = signed offset like "+00:00").
+        ' All raw SQL and FromSqlInterpolated timestamp literals must use this exact format.
+        Private Const TsFmt As String = "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz"
+
+        ' DateTime columns (no offset) use lowercase "f" — always emits all 7 fractional digits.
+        Private Const CreatedFmt As String = "yyyy-MM-dd HH:mm:ss.fffffff"
+
         ''' <summary>Get bars for ML training or backtest. Returns oldest-first.</summary>
+        ''' <remarks>
+        ''' Uses FromSqlInterpolated instead of LINQ .Where() to bypass the VB.NET / EF Core
+        ''' string-comparison incompatibility (UAT-BUG-001): VB.NET compiles String = String
+        ''' inside expression trees to String.Compare(), which EF Core SQLite cannot translate.
+        ''' FromSqlInterpolated passes ContractId as a parameterised SQL literal, bypassing
+        ''' the expression tree entirely.  Timestamps are pre-formatted to TsFmt so SQLite's
+        ''' text ordering gives the same result as a numeric date comparison.
+        '''
+        ''' UAT-BUG-005: ordering is done in-memory using LINQ-to-Objects on the Timestamp
+        ''' property, NOT by Id.  Id order does not guarantee Timestamp order when bars are
+        ''' stored in descending-timestamp batches (e.g. the ProjectX API returns newest-first
+        ''' and BulkInsertAsync stores them in that order, so newer bars have lower Ids).
+        ''' Using .OrderBy(b.Id) then gave the backtest engine reverse-chronological bars,
+        ''' causing exit timestamps to be earlier than entry timestamps and massively inflated
+        ''' metrics due to look-ahead bias.
+        ''' </remarks>
         Public Async Function GetBarsAsync(contractId As String,
                                             timeframe As BarTimeframe,
                                             from As DateTimeOffset,
                                             [to] As DateTimeOffset,
                                             Optional cancel As CancellationToken = Nothing) As Task(Of List(Of MarketBar))
-            ' CInt() inside a lambda expression tree compiles to a VB runtime helper call that
-            ' EF Core cannot translate to SQL.  Capture the integer value outside the lambda.
             Dim tfCode As Integer = CInt(timeframe)
+            Dim fromStr As String = from.ToString(TsFmt)
+            Dim toStr As String = [to].ToString(TsFmt)
+
             Dim entities = Await _context.Bars _
-                .Where(Function(b) b.ContractId.Equals(contractId) _
-                                AndAlso b.Timeframe = tfCode _
-                                AndAlso b.Timestamp >= from _
-                                AndAlso b.Timestamp <= [to]) _
-                .OrderBy(Function(b) b.Id) _
+                .FromSqlInterpolated(
+                    $"SELECT * FROM Bars WHERE ContractId = {contractId} AND Timeframe = {tfCode} AND Timestamp >= {fromStr} AND Timestamp <= {toStr}") _
+                .AsNoTracking() _
                 .ToListAsync(cancel)
 
-            Return entities.Select(AddressOf MapToModel).ToList()
+            ' Sort in-memory by Timestamp (LINQ-to-Objects) to guarantee chronological
+            ' oldest-first order regardless of storage/insertion order.
+            ' EF Core SQLite cannot use DateTimeOffset in ORDER BY clauses (UAT-BUG-003);
+            ' in-memory sorting avoids that restriction and is always reliable.
+            Return entities.OrderBy(Function(b) b.Timestamp).Select(AddressOf MapToModel).ToList()
         End Function
 
-        ''' <summary>Get the N most recent bars for a contract/timeframe.</summary>
+        ''' <summary>Get the N most recent bars for a contract/timeframe, returned oldest-first.</summary>
+        ''' <remarks>
+        ''' See GetBarsAsync for the FromSqlInterpolated rationale (UAT-BUG-001).
+        ''' UAT-BUG-005: selects the N most recent rows by Timestamp in-memory — cannot rely
+        ''' on Id ordering (see GetBarsAsync remarks).
+        ''' </remarks>
         Public Async Function GetRecentBarsAsync(contractId As String,
                                                   timeframe As BarTimeframe,
                                                   count As Integer,
                                                   Optional cancel As CancellationToken = Nothing) As Task(Of List(Of MarketBar))
-            ' SQLite cannot ORDER BY DateTimeOffset — use Id (auto-increment = chronological order).
-            Dim tfCode As Integer = CInt(timeframe)   ' must be outside lambda — see GetBarsAsync comment
+            Dim tfCode As Integer = CInt(timeframe)
+
             Dim entities = Await _context.Bars _
-                .Where(Function(b) b.ContractId.Equals(contractId) _
-                                AndAlso b.Timeframe = tfCode) _
-                .OrderByDescending(Function(b) b.Id) _
-                .Take(count) _
-                .OrderBy(Function(b) b.Id) _
+                .FromSqlInterpolated(
+                    $"SELECT * FROM Bars WHERE ContractId = {contractId} AND Timeframe = {tfCode}") _
+                .AsNoTracking() _
                 .ToListAsync(cancel)
 
-            Return entities.Select(AddressOf MapToModel).ToList()
+            ' Select the N most-recent bars by Timestamp then return them oldest-first.
+            Return entities.OrderByDescending(Function(b) b.Timestamp) _
+                           .Take(count) _
+                           .OrderBy(Function(b) b.Timestamp) _
+                           .Select(AddressOf MapToModel).ToList()
         End Function
 
         ''' <summary>Get the timestamp of the latest stored bar (used to know where to fetch from).</summary>
+        ''' <remarks>
+        ''' See GetBarsAsync for the FromSqlInterpolated rationale (UAT-BUG-001).
+        ''' UAT-BUG-005: uses in-memory Max(Timestamp) rather than OrderByDescending(Id) —
+        ''' Id does not reliably map to Timestamp order when bars are stored newest-first.
+        ''' </remarks>
         Public Async Function GetLatestTimestampAsync(contractId As String,
                                                        timeframe As BarTimeframe,
                                                        Optional cancel As CancellationToken = Nothing) As Task(Of DateTimeOffset?)
-            ' Order by Id (primary key, auto-increment) — highest Id == newest inserted bar.
-            Dim tfCode As Integer = CInt(timeframe)   ' must be outside lambda — see GetBarsAsync comment
-            Dim row = Await _context.Bars _
-                .Where(Function(b) b.ContractId.Equals(contractId) AndAlso b.Timeframe = tfCode) _
-                .OrderByDescending(Function(b) b.Id) _
-                .FirstOrDefaultAsync(cancel)
-            Return If(row IsNot Nothing, CType(row.Timestamp, DateTimeOffset?), Nothing)
+            Dim tfCode As Integer = CInt(timeframe)
+
+            Dim entities = Await _context.Bars _
+                .FromSqlInterpolated(
+                    $"SELECT * FROM Bars WHERE ContractId = {contractId} AND Timeframe = {tfCode}") _
+                .AsNoTracking() _
+                .ToListAsync(cancel)
+
+            If entities.Count = 0 Then Return Nothing
+            Return CType(entities.Max(Function(b) b.Timestamp), DateTimeOffset?)
         End Function
 
         ''' <summary>
@@ -90,14 +137,9 @@ Namespace TopStepTrader.Data.Repositories
             Dim entities = bars.Select(Function(b) MapToEntity(b, timeframe)).ToList()
             If entities.Count = 0 Then Return 0
 
-            ' EF Core 9 SQLite stores DateTimeOffset via DateTimeOffsetToStringConverter
-            ' using the format "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz" (space not T, capital F = no
-            ' trailing zeros in fractional part, zzz = signed offset like "+00:00").
-            ' We use the same format in our raw INSERT so that EF Core LINQ range queries
-            ' (b.Timestamp >= from, etc.) work correctly against stored TEXT values.
-            Const TsFmt      As String = "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz"
-            Const CreatedFmt As String = "yyyy-MM-dd HH:mm:ss.fffffff"   ' DateTime column, no offset
-
+            ' Class-level TsFmt / CreatedFmt constants are used here so that raw INSERT
+            ' values are stored in the same TEXT format that FromSqlInterpolated range
+            ' queries and EF Core LINQ date comparisons expect.
             Const Sql As String =
                 "INSERT OR IGNORE INTO Bars " &
                 "(ContractId, Timeframe, Timestamp, OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, VWAP, CreatedAt) " &
@@ -105,7 +147,7 @@ Namespace TopStepTrader.Data.Repositories
 
             ' Obtain the connection EF Core is using.  Open it ourselves only when EF Core
             ' has not already opened it (e.g. during an enclosing transaction).
-            Dim conn     = _context.Database.GetDbConnection()
+            Dim conn = _context.Database.GetDbConnection()
             Dim mustClose = (conn.State <> ConnectionState.Open)
             If mustClose Then Await conn.OpenAsync(cancel)
 
@@ -117,7 +159,7 @@ Namespace TopStepTrader.Data.Repositories
                         cmd.Transaction = txn
                         cmd.CommandText = Sql
 
-                        Dim tsText      = entity.Timestamp.ToString(TsFmt)
+                        Dim tsText = entity.Timestamp.ToString(TsFmt)
                         Dim createdText = entity.CreatedAt.ToString(CreatedFmt)
 
                         ' Helper: create and add a named parameter
@@ -129,15 +171,15 @@ Namespace TopStepTrader.Data.Repositories
                                    End Sub
 
                         addP("@contractId", entity.ContractId)
-                        addP("@timeframe",  entity.Timeframe)
-                        addP("@timestamp",  tsText)
-                        addP("@open",       entity.OpenPrice)
-                        addP("@high",       entity.HighPrice)
-                        addP("@low",        entity.LowPrice)
-                        addP("@close",      entity.ClosePrice)
-                        addP("@volume",     entity.Volume)
-                        addP("@vwap",       If(entity.VWAP.HasValue, CObj(entity.VWAP.Value), Nothing))
-                        addP("@createdAt",  createdText)
+                        addP("@timeframe", entity.Timeframe)
+                        addP("@timestamp", tsText)
+                        addP("@open", entity.OpenPrice)
+                        addP("@high", entity.HighPrice)
+                        addP("@low", entity.LowPrice)
+                        addP("@close", entity.ClosePrice)
+                        addP("@volume", entity.Volume)
+                        addP("@vwap", If(entity.VWAP.HasValue, CObj(entity.VWAP.Value), Nothing))
+                        addP("@createdAt", createdText)
 
                         ' ExecuteNonQuery returns 1 for an actual insert, 0 when IGNORE fires
                         inserted += Await cmd.ExecuteNonQueryAsync(cancel)
@@ -167,30 +209,30 @@ Namespace TopStepTrader.Data.Repositories
 
         Private Function MapToModel(entity As BarEntity) As MarketBar
             Return New MarketBar With {
-                .Id        = entity.Id,
+                .Id = entity.Id,
                 .ContractId = entity.ContractId,
                 .Timestamp = entity.Timestamp,
                 .Timeframe = CType(entity.Timeframe, BarTimeframe),
-                .Open      = entity.OpenPrice,
-                .High      = entity.HighPrice,
-                .Low       = entity.LowPrice,
-                .Close     = entity.ClosePrice,
-                .Volume    = entity.Volume,
-                .VWAP      = entity.VWAP
+                .Open = entity.OpenPrice,
+                .High = entity.HighPrice,
+                .Low = entity.LowPrice,
+                .Close = entity.ClosePrice,
+                .Volume = entity.Volume,
+                .VWAP = entity.VWAP
             }
         End Function
 
         Private Function MapToEntity(bar As MarketBar, timeframe As BarTimeframe) As BarEntity
             Return New BarEntity With {
                 .ContractId = bar.ContractId,
-                .Timeframe  = CInt(timeframe),
-                .Timestamp  = bar.Timestamp,
-                .OpenPrice  = bar.Open,
-                .HighPrice  = bar.High,
-                .LowPrice   = bar.Low,
+                .Timeframe = CInt(timeframe),
+                .Timestamp = bar.Timestamp,
+                .OpenPrice = bar.Open,
+                .HighPrice = bar.High,
+                .LowPrice = bar.Low,
                 .ClosePrice = bar.Close,
-                .Volume     = bar.Volume,
-                .VWAP       = bar.VWAP
+                .Volume = bar.Volume,
+                .VWAP = bar.VWAP
             }
         End Function
 

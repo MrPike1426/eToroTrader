@@ -10,12 +10,66 @@
                 <ResourceDictionary Source="Styles/Typography.xaml"/>
                 <ResourceDictionary Source="Styles/Buttons.xaml"/>
                 <ResourceDictionary Source="Styles/DataGrids.xaml"/>
+                <ResourceDictionary Source="Styles/ComboBoxes3.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- Value converters (declared inline so the types resolve from this assembly) -->
-            <converters:BrushKeyConverter              x:Key="BrushKeyConverter"/>
-            <converters:BoolToVisibilityConverter      x:Key="BoolToVisibilityConverter"/>
+            <!-- Register converters so StaticResource lookups succeed during InitializeComponent -->
+            <converters:BrushKeyConverter x:Key="BrushKeyConverter"/>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
             <converters:BoolToBorderThicknessConverter x:Key="BoolToBorderThicknessConverter"/>
+
+            <!-- Contract ID ComboBox style: force white background and dark foreground -->
+            <Style x:Key="ContractIdComboBoxStyle" TargetType="ComboBox">
+                <Setter Property="Background" Value="White"/>
+                <Setter Property="Foreground" Value="#FF000000"/>
+                <Setter Property="BorderBrush" Value="#FFBFBFBF"/>
+                <Setter Property="Padding" Value="4,2"/>
+                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ComboBox">
+                            <Grid>
+                                <ToggleButton Name="ToggleButton"
+                                              Grid.Column="2"
+                                              Focusable="False"
+                                              IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                              ClickMode="Press"
+                                              Background="{TemplateBinding Background}"
+                                              BorderBrush="{TemplateBinding BorderBrush}"
+                                              BorderThickness="{TemplateBinding BorderThickness}"/>
+                                <ContentPresenter Name="ContentSite"
+                                                  IsHitTestVisible="False"
+                                                  Content="{TemplateBinding SelectionBoxItem}"
+                                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                  ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                  Margin="6,2,25,2"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Left"/>
+                                <Popup Name="Popup"
+                                       Placement="Bottom"
+                                       IsOpen="{TemplateBinding IsDropDownOpen}"
+                                       AllowsTransparency="True"
+                                       Focusable="False"
+                                       PopupAnimation="Slide"
+                                       StaysOpen="False"
+                                       PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                                    <Grid Name="DropDown"
+                                          SnapsToDevicePixels="True"
+                                          MinWidth="{TemplateBinding ActualWidth}"
+                                          MaxHeight="200"
+                                          Background="White">
+                                        <Border x:Name="DropDownBorder" BorderThickness="1" BorderBrush="#FFBFBFBF" Background="White"/>
+                                        <ScrollViewer Margin="4,6,4,6" SnapsToDevicePixels="True">
+                                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                        </ScrollViewer>
+                                    </Grid>
+                                </Popup>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
         </ResourceDictionary>
     </Application.Resources>
 </Application>

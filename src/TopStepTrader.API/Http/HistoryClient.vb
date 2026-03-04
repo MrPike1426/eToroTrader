@@ -2,10 +2,10 @@ Imports System.Net.Http
 Imports System.Threading
 Imports Microsoft.Extensions.Logging
 Imports Microsoft.Extensions.Options
-Imports TopStepTrader.Core.Settings
 Imports TopStepTrader.API.Models.Requests
 Imports TopStepTrader.API.Models.Responses
 Imports TopStepTrader.API.RateLimiting
+Imports TopStepTrader.Core.Settings
 
 Namespace TopStepTrader.API.Http
 
@@ -41,22 +41,30 @@ Namespace TopStepTrader.API.Http
         ''' <param name="unitsBack">Number of bars to fetch (max ~500 per call)</param>
         Public Function RetrieveBarsAsync(contractId As String,
                                           unit As Integer,
+                                          unitNumber As Integer,
                                           unitsBack As Integer,
                                           Optional startTime As DateTimeOffset? = Nothing,
                                           Optional endTime As DateTimeOffset? = Nothing,
                                           Optional cancel As CancellationToken = Nothing) As Task(Of BarResponse)
 
-            Dim request = New RetrieveBarsRequest With {
-                .ContractId  = contractId,
-                .Unit        = unit,
-                .UnitNumber  = unit,
-                .Limit       = unitsBack,
-                .Live        = False,
-                .StartTime   = If(startTime.HasValue, startTime.Value.ToString("O"),
-                                  DateTimeOffset.UtcNow.AddMonths(-6).ToString("O")),
-                .EndTime     = If(endTime.HasValue, endTime.Value.ToString("O"),
-                                  DateTimeOffset.UtcNow.ToString("O"))
-            }
+            Dim request As New RetrieveBarsRequest()
+            request.ContractId = contractId
+            request.Unit = unit
+            request.UnitNumber = unitNumber
+            request.Limit = unitsBack
+            request.Live = False
+            ' If caller didn't provide a startTime, send an empty string so the API
+            ' returns the most recent N bars rather than enforcing a 6-month window.
+            If startTime.HasValue Then
+                request.StartTime = startTime.Value.ToString("O")
+            Else
+                request.StartTime = String.Empty
+            End If
+            If endTime.HasValue Then
+                request.EndTime = endTime.Value.ToString("O")
+            Else
+                request.EndTime = DateTimeOffset.UtcNow.ToString("O")
+            End If
             Dim endpoint = $"{_settings.RestBaseUrl}/api/History/retrieveBars"
 
             ' useHistoryLimit:=True to apply the stricter 50/30s window

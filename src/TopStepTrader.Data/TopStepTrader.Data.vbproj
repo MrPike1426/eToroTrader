@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace></RootNamespace>
+    <OptionCompare>Binary</OptionCompare>
   </PropertyGroup>
 
   <ItemGroup>

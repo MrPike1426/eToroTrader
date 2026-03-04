@@ -1,8 +1,8 @@
-Imports Microsoft.ML
 Imports Microsoft.Extensions.Logging
+Imports Microsoft.ML
 Imports TopStepTrader.Core.Models
-Imports TopStepTrader.ML.Models
 Imports TopStepTrader.ML.Features
+Imports TopStepTrader.ML.Models
 
 Namespace TopStepTrader.ML.Prediction
 

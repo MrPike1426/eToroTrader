@@ -6,20 +6,32 @@ Imports TopStepTrader.Core.Interfaces
 Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Data.Entities
 Imports TopStepTrader.Data.Repositories
-Imports TopStepTrader.ML.Prediction
+Imports TopStepTrader.ML.Features
 
 Namespace TopStepTrader.Services.Backtest
 
     ''' <summary>
-    ''' Walk-forward backtest engine. Replays historical bars through the ML predictor,
-    ''' simulating entries/exits and computing P&amp;L metrics.
+    ''' Walk-forward backtest engine. Replays historical bars through the same EMA/RSI
+    ''' weighted-scoring algorithm used by StrategyExecutionEngine (live trading), so that
+    ''' backtest results represent what live trading will actually produce.
+    '''
+    ''' Signal algorithm (mirrors StrategyExecutionEngine.EmaRsiWeightedScore):
+    '''   Six signals scored 0–100; fire Long when bullScore ≥ threshold, Short when bearScore ≥ threshold.
+    '''   1. EMA21 > EMA50 crossover — 25 pts
+    '''   2. Close > EMA21 — 20 pts
+    '''   3. Close > EMA50 — 15 pts
+    '''   4. RSI14 gradient (oversold=bullish, overbought=bearish) — up to 20 pts
+    '''   5. EMA21 momentum (rising since prior bar) — 10 pts
+    '''   6. 2+ of last 3 candles bullish — 10 pts
+    '''
+    ''' Pure calculation logic lives in <see cref="BacktestMetrics"/> (Friend module)
+    ''' so it can be unit-tested independently.
     ''' </summary>
     Public Class BacktestEngine
         Implements IBacktestService
 
         Private ReadOnly _barRepository As BarRepository
         Private ReadOnly _backtestRepository As BacktestRepository
-        Private ReadOnly _predictor As SignalPredictor
         Private ReadOnly _logger As ILogger(Of BacktestEngine)
 
         Public Event ProgressUpdated As EventHandler(Of BacktestProgressEventArgs) _
@@ -27,11 +39,9 @@ Namespace TopStepTrader.Services.Backtest
 
         Public Sub New(barRepository As BarRepository,
                        backtestRepository As BacktestRepository,
-                       predictor As SignalPredictor,
                        logger As ILogger(Of BacktestEngine))
             _barRepository = barRepository
             _backtestRepository = backtestRepository
-            _predictor = predictor
             _logger = logger
         End Sub
 
@@ -55,35 +65,61 @@ Namespace TopStepTrader.Services.Backtest
 
             _logger.LogInformation("Replaying {N} bars", filteredBars.Count)
 
+            ' ── Pre-calculate full indicator series ONCE for all bars ────────────
+            ' This mirrors how the live engine works: EMA/RSI carries full price history,
+            ' not a truncated window.  Much more accurate and efficient than per-bar recalc.
+            Dim allCloses = filteredBars.Select(Function(b) b.Close).ToList()
+            Dim ema21Series = TechnicalIndicators.EMA(allCloses, 21)  ' valid from index 20
+            Dim ema50Series = TechnicalIndicators.EMA(allCloses, 50)  ' valid from index 49
+            Dim rsi14Series = TechnicalIndicators.RSI(allCloses, 14)  ' valid from index 14
+
+            ' EMA8 only needed for Sniper (TripleEmaCascade) strategy.
+            Dim ema8Series As Single() = Nothing
+            If config.StrategyCondition = StrategyConditionType.TripleEmaCascade Then
+                ema8Series = TechnicalIndicators.EMA(allCloses, 8)    ' valid from index 7
+            End If
+
+            ' Warm-up: EMA50 needs 50 bars; add 5-bar buffer so EMA21Prev also valid.
+            ' Bars before this index simply have no signal — same as live engine startup.
+            Dim warmUp = 55
+
             Dim trades As New List(Of BacktestTrade)()
             Dim capital = config.InitialCapital
             Dim peakCapital = capital
             Dim maxDrawdown = 0D
             Dim openTrade As BacktestTrade = Nothing
-            Dim windowSize = 30  ' Minimum bars for signal
 
-            For i = windowSize To filteredBars.Count - 1
+            ' MinSignalConfidence is stored as 0.0–1.0 (e.g. 0.75 = 75%).
+            ' The EMA/RSI score produces 0–100, so convert once here.
+            Dim minPct As Double = config.MinSignalConfidence * 100.0
+
+            Dim progressStep = Math.Max(1, CInt(filteredBars.Count / 20))
+
+            For i = warmUp To filteredBars.Count - 1
                 cancel.ThrowIfCancellationRequested()
 
-                ' Progress events every 5%
-                Dim pct = CInt((i / CDbl(filteredBars.Count)) * 100)
-                If i Mod CInt(filteredBars.Count / 20) = 0 Then
+                ' Progress events every ~5%
+                If i Mod progressStep = 0 Then
+                    Dim pct = CInt((i / CDbl(filteredBars.Count)) * 100)
                     RaiseEvent ProgressUpdated(Me, New BacktestProgressEventArgs(
                         pct, filteredBars(i).Timestamp.Date, trades.Count))
                 End If
 
-                ' filteredBars is already List(Of MarketBar) — no mapping needed
                 Dim bar = filteredBars(i)
-                Dim windowBars = filteredBars.Skip(i - windowSize).Take(windowSize + 1).ToList()
 
-                ' Check exit for open trade
+                ' ── Check exit for open trade ──────────────────────────────────
                 If openTrade IsNot Nothing Then
-                    Dim exitReason = CheckExit(openTrade, bar, config)
+                    Dim exitReason = BacktestMetrics.CheckExit(openTrade, bar, config)
                     If exitReason IsNot Nothing Then
                         openTrade.ExitTime = bar.Timestamp
-                        openTrade.ExitPrice = bar.Close
+                        ' UAT-BUG-006: use the exact SL/TP level price, not bar.Close.
+                        ' CheckExit detects triggers via bar.High/Low (OHLC); if exit price
+                        ' were set to bar.Close the bar could close on the profitable side of
+                        ' entry even though a StopLoss was hit intrabar, yielding a "StopLoss"
+                        ' trade with positive P&L — physically impossible.
+                        openTrade.ExitPrice = BacktestMetrics.GetExitPrice(openTrade, bar, exitReason, config)
                         openTrade.ExitReason = exitReason
-                        Dim pnl = CalculatePnL(openTrade)
+                        Dim pnl = BacktestMetrics.CalculatePnL(openTrade, config)
                         openTrade.PnL = pnl
                         capital += pnl
                         If capital > peakCapital Then peakCapital = capital
@@ -94,20 +130,116 @@ Namespace TopStepTrader.Services.Backtest
                     End If
                 End If
 
-                ' Generate signal for potential entry (only when flat)
-                If openTrade Is Nothing AndAlso _predictor.IsModelLoaded Then
-                    Dim prediction = _predictor.Predict(windowBars)
-                    If prediction IsNot Nothing Then
-                        Dim sig = prediction.ToSignalType(config.MinSignalConfidence)
-                        If sig <> SignalType.Hold Then
+                ' ── Signal evaluation — Only when flat (no open trade) ─────────────
+                ' Branches on config.StrategyCondition: EmaRsiWeightedScore or TripleEmaCascade.
+
+                ' ── 3-EMA Cascade (Sniper) signal ─────────────────────────────────
+                If openTrade Is Nothing AndAlso
+                   config.StrategyCondition = StrategyConditionType.TripleEmaCascade Then
+
+                    Dim ema8Now = ema8Series(i)
+                    Dim ema8Prev = ema8Series(i - 1)
+                    Dim ema21CascNow = ema21Series(i)
+                    Dim ema50CascNow = ema50Series(i)
+                    Dim ema50CascPrev = ema50Series(i - 1)
+
+                    If Not (Single.IsNaN(ema8Now) OrElse Single.IsNaN(ema8Prev) OrElse
+                            Single.IsNaN(ema21CascNow) OrElse Single.IsNaN(ema50CascNow) OrElse
+                            Single.IsNaN(ema50CascPrev)) Then
+
+                        Dim lastCascadeClose = bar.Close
+                        Dim crossedAbove = ema8Prev <= ema21Series(i - 1) AndAlso ema8Now > ema21CascNow
+                        Dim crossedBelow = ema8Prev >= ema21Series(i - 1) AndAlso ema8Now < ema21CascNow
+                        Dim ema50Rising = ema50CascNow > ema50CascPrev
+                        Dim ema50Falling = ema50CascNow < ema50CascPrev
+
+                        Dim cascadeSide As String = Nothing
+                        If crossedAbove AndAlso lastCascadeClose > CDec(ema50CascNow) AndAlso ema50Rising Then
+                            cascadeSide = "Buy"
+                        ElseIf crossedBelow AndAlso lastCascadeClose < CDec(ema50CascNow) AndAlso ema50Falling Then
+                            cascadeSide = "Sell"
+                        End If
+
+                        If cascadeSide IsNot Nothing Then
                             openTrade = New BacktestTrade With {
                                 .EntryTime = bar.Timestamp,
                                 .EntryPrice = bar.Close,
-                                .Side = sig.ToString(),
-                                .Quantity = 1,
-                                .SignalConfidence = prediction.Confidence
+                                .Side = cascadeSide,
+                                .Quantity = config.Quantity,
+                                .SignalConfidence = 1.0F
                             }
                         End If
+                    End If
+
+                    Continue For  ' skip EMA/RSI block for this bar
+                End If
+
+                ' ── EMA/RSI weighted signal — same algorithm as StrategyExecutionEngine ──
+                ' Only evaluate when flat (no open trade).
+                If openTrade Is Nothing Then
+                    Dim ema21Now = ema21Series(i)
+                    Dim ema21Prev = ema21Series(i - 1)
+                    Dim ema50Now = ema50Series(i)
+                    Dim rsiVal = rsi14Series(i)
+
+                    ' Skip bar if any indicator hasn't finished warming up yet
+                    If Single.IsNaN(ema21Now) OrElse Single.IsNaN(ema21Prev) OrElse
+                       Single.IsNaN(ema50Now) OrElse Single.IsNaN(rsiVal) Then Continue For
+
+                    Dim lastClose = bar.Close
+                    Dim bullScore As Double = 0
+
+                    ' 1. EMA21 vs EMA50 crossover — 25 pts
+                    If ema21Now > ema50Now Then bullScore += 25
+
+                    ' 2. Close vs EMA21 — 20 pts
+                    If lastClose > CDec(ema21Now) Then bullScore += 20
+
+                    ' 3. Close vs EMA50 — 15 pts
+                    If lastClose > CDec(ema50Now) Then bullScore += 15
+
+                    ' 4. RSI gradient — 20 pts  (oversold=bullish, overbought=bearish)
+                    Dim rsiScore As Double
+                    If rsiVal <= 30 Then
+                        rsiScore = 20
+                    ElseIf rsiVal >= 70 Then
+                        rsiScore = 0
+                    Else
+                        rsiScore = (70.0 - rsiVal) / 40.0 * 20.0
+                    End If
+                    bullScore += rsiScore
+
+                    ' 5. EMA21 momentum (rising since prior bar) — 10 pts
+                    If ema21Now > ema21Prev Then bullScore += 10
+
+                    ' 6. Recent 3 candles: ≥ 2 bullish — 10 pts
+                    Dim bullCandles As Integer = 0
+                    For c = i - 2 To i
+                        If filteredBars(c).IsBullish Then bullCandles += 1
+                    Next
+                    If bullCandles >= 2 Then bullScore += 10
+
+                    Dim downPct As Double = 100.0 - bullScore
+
+                    ' Fire entry when score meets the user-configured threshold
+                    Dim tradeableSide As String = Nothing
+                    Dim sigConf As Single = 0
+                    If bullScore >= minPct Then
+                        tradeableSide = "Buy"
+                        sigConf = CSng(bullScore) / 100.0F
+                    ElseIf downPct >= minPct Then
+                        tradeableSide = "Sell"
+                        sigConf = CSng(downPct) / 100.0F
+                    End If
+
+                    If tradeableSide IsNot Nothing Then
+                        openTrade = New BacktestTrade With {
+                            .EntryTime = bar.Timestamp,
+                            .EntryPrice = bar.Close,
+                            .Side = tradeableSide,
+                            .Quantity = config.Quantity,
+                            .SignalConfidence = sigConf
+                        }
                     End If
                 End If
             Next
@@ -118,17 +250,17 @@ Namespace TopStepTrader.Services.Backtest
                 openTrade.ExitTime = lastBar.Timestamp
                 openTrade.ExitPrice = lastBar.Close
                 openTrade.ExitReason = "EndOfData"
-                openTrade.PnL = CalculatePnL(openTrade)
+                openTrade.PnL = BacktestMetrics.CalculatePnL(openTrade, config)
                 capital += openTrade.PnL.GetValueOrDefault()
                 trades.Add(openTrade)
             End If
 
             ' Calculate metrics
-            Dim result = BuildResult(config, trades, capital, maxDrawdown)
+            Dim result = BacktestMetrics.BuildResult(config, trades, capital, maxDrawdown)
 
             ' Persist to database
             Try
-                Await PersistResultAsync(result, filteredBars.Count)
+                Await PersistResultAsync(result, filteredBars.Count, config.Timeframe)
             Catch ex As Exception
                 _logger.LogError(ex, "Failed to persist backtest result")
             End Try
@@ -148,75 +280,11 @@ Namespace TopStepTrader.Services.Backtest
 
         ' ─── Helpers ────────────────────────────────────────────────────────────
 
-        Private Shared Function CheckExit(trade As BacktestTrade,
-                                           bar As MarketBar,
-                                           config As BacktestConfiguration) As String
-            Dim isBuy = trade.Side = "Buy"
-            ' Stop loss
-            Dim stopDelta = config.StopLossTicks * 0.25D  ' 1 tick = $12.50 on ES (0.25 pts)
-            Dim tpDelta = config.TakeProfitTicks * 0.25D
-
-            If isBuy Then
-                If bar.Low <= trade.EntryPrice - stopDelta Then Return "StopLoss"
-                If bar.High >= trade.EntryPrice + tpDelta Then Return "TakeProfit"
-            Else
-                If bar.High >= trade.EntryPrice + stopDelta Then Return "StopLoss"
-                If bar.Low <= trade.EntryPrice - tpDelta Then Return "TakeProfit"
-            End If
-            Return Nothing
-        End Function
-
-        Private Shared Function CalculatePnL(trade As BacktestTrade) As Decimal
-            If Not trade.ExitPrice.HasValue Then Return 0D
-            Dim priceDiff = trade.ExitPrice.Value - trade.EntryPrice
-            Dim isBuy = trade.Side = "Buy"
-            ' ES futures: $50 per point
-            Dim multiplier = 50D
-            Return If(isBuy, priceDiff, -priceDiff) * trade.Quantity * multiplier
-        End Function
-
-        Private Shared Function BuildResult(config As BacktestConfiguration,
-                                             trades As List(Of BacktestTrade),
-                                             finalCapital As Decimal,
-                                             maxDrawdown As Decimal) As BacktestResult
-            Dim winners = trades.Where(Function(t) t.PnL.GetValueOrDefault() > 0).ToList()
-            Dim losers = trades.Where(Function(t) t.PnL.GetValueOrDefault() <= 0).ToList()
-            Dim totalPnL = trades.Sum(Function(t) t.PnL.GetValueOrDefault())
-
-            Return New BacktestResult With {
-                .RunName = config.RunName,
-                .ContractId = config.ContractId,
-                .StartDate = config.StartDate,
-                .EndDate = config.EndDate,
-                .InitialCapital = config.InitialCapital,
-                .FinalCapital = finalCapital,
-                .TotalTrades = trades.Count,
-                .WinningTrades = winners.Count,
-                .LosingTrades = losers.Count,
-                .TotalPnL = totalPnL,
-                .MaxDrawdown = maxDrawdown,
-                .WinRate = If(trades.Count > 0, CSng(winners.Count) / trades.Count, 0F),
-                .AveragePnLPerTrade = If(trades.Count > 0, totalPnL / trades.Count, 0D),
-                .SharpeRatio = CalculateSharpe(trades),
-                .Trades = trades
-            }
-        End Function
-
-        Private Shared Function CalculateSharpe(trades As List(Of BacktestTrade)) As Single?
-            If trades.Count < 2 Then Return Nothing
-            Dim returns = trades.Select(Function(t) CDbl(t.PnL.GetValueOrDefault())).ToList()
-            Dim avg = returns.Average()
-            Dim variance = returns.Select(Function(r) (r - avg) * (r - avg)).Average()
-            Dim stddev = Math.Sqrt(variance)
-            If stddev = 0 Then Return Nothing
-            Return CSng(avg / stddev * Math.Sqrt(252))  ' Annualised
-        End Function
-
-        Private Async Function PersistResultAsync(result As BacktestResult, barCount As Integer) As Task
+        Private Async Function PersistResultAsync(result As BacktestResult, barCount As Integer, timeframe As Integer) As Task
             Dim entity = New BacktestRunEntity With {
                 .RunName = result.RunName,
                 .ContractId = result.ContractId,
-                .Timeframe = 5,
+                .Timeframe = timeframe,
                 .StartDate = result.StartDate,
                 .EndDate = result.EndDate,
                 .InitialCapital = result.InitialCapital,
@@ -229,7 +297,7 @@ Namespace TopStepTrader.Services.Backtest
                 .WinRate = result.WinRate,
                 .SharpeRatio = result.SharpeRatio,
                 .AveragePnLPerTrade = result.AveragePnLPerTrade,
-                .ModelVersion = _predictor.ModelVersion,
+                .ModelVersion = "EMA/RSI-Rule-Based",
                 .CompletedAt = DateTimeOffset.UtcNow,
                 .Trades = result.Trades.Select(Function(t) New BacktestTradeEntity With {
                     .EntryTime = t.EntryTime,
