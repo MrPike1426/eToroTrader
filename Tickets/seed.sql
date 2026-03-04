@@ -43,7 +43,13 @@ VALUES
  'Update UI instrument dropdowns to use eToro instrument names',
  'ContractSelectorControl and AI Trade tab currently show TopStep contract codes. Update to display eToro instrument names and instrumentIds once TICKET-002 confirms the real IDs.',
  'Damo', 4, 'ui,instruments',
- 'BlockedBy TICKET-002');
+ 'BlockedBy TICKET-002'),
+
+('TICKET-008', 'Backlog', 'Medium', 'Low',
+ 'House-keeping — remove dead/redundant code after UAT',
+ 'Remove empty stub files (LoginKeyRequest, AuthResponse, AccountSearchRequest, ContractAvailableRequest, RetrieveBarsRequest, CancelOrderRequest old shape). Remove no-op TokenRefreshWorker from DI. Delete ProjectX comments. Rename TokenManager.vb file to match EToroCredentialsProvider class name.',
+ 'GitHub Copilot', 10, 'maintenance,cleanup',
+ 'Deferred until full eToro UAT is complete. BlockedBy TICKET-001,TICKET-003');
 
 -- Dependency cross-links
 UPDATE Tickets SET Blocks    = 'TICKET-005' WHERE TicketId = 'TICKET-001';
@@ -52,3 +58,7 @@ UPDATE Tickets SET Blocks    = 'TICKET-006' WHERE TicketId = 'TICKET-005';
 UPDATE Tickets SET BlockedBy = 'TICKET-005' WHERE TicketId = 'TICKET-006';
 UPDATE Tickets SET Blocks    = 'TICKET-007' WHERE TicketId = 'TICKET-002';
 UPDATE Tickets SET BlockedBy = 'TICKET-002' WHERE TicketId = 'TICKET-007';
+UPDATE Tickets SET BlockedBy = 'TICKET-001,TICKET-003' WHERE TicketId = 'TICKET-008';
+
+-- Remove any malformed records created with short IDs
+DELETE FROM Tickets WHERE TicketId NOT LIKE 'TICKET-%';

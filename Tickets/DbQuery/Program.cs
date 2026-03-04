@@ -148,7 +148,13 @@ void CmdNew()
 {
     AnsiConsole.MarkupLine("[bold cyan]New Ticket[/]");
 
-    var id       = AnsiConsole.Ask<string>("Ticket ID [dim](e.g. TICKET-032)[/]:");
+    string id;
+    while (true)
+    {
+        id = AnsiConsole.Ask<string>("Ticket ID [dim](e.g. TICKET-008)[/]:").Trim().ToUpperInvariant();
+        if (System.Text.RegularExpressions.Regex.IsMatch(id, @"^TICKET-\d+$")) break;
+        AnsiConsole.MarkupLine("[red]Format must be TICKET-NNN (e.g. TICKET-008)[/]");
+    }
     var title    = AnsiConsole.Ask<string>("Title:");
     var status   = AnsiConsole.Prompt(new SelectionPrompt<string>().Title("Status:")
         .AddChoices("Backlog","For Development","In Development","SIT Testing","Complete","Cancelled"));
