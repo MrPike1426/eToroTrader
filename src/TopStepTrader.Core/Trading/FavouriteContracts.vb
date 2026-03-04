@@ -10,10 +10,10 @@ Namespace TopStepTrader.Core.Trading
 
         Public Shared Function GetDefaults() As List(Of FavouriteContract)
             Return New List(Of FavouriteContract) From {
-                New FavouriteContract("GOLD",    "Gold",         1001, 0.01D, 0.01D, 1D),
-                New FavouriteContract("OIL",     "Crude Oil",    1002, 0.01D, 0.01D, 1D),
-                New FavouriteContract("NSDQ100", "Nasdaq-100",   1003, 0.01D, 0.01D, 1D),
-                New FavouriteContract("SPX500",  "S&P 500",      1004, 0.01D, 0.01D, 1D)
+                New FavouriteContract("GOLD",    "Gold (Non Expiry)",           18, 0.01D, 0.01D, 1D),
+                New FavouriteContract("OIL",     "Oil (Non Expiry)",            17, 0.01D, 0.01D, 1D),
+                New FavouriteContract("NSDQ100", "NASDAQ100 Index (Non Expiry)", 28, 0.01D, 0.01D, 1D),
+                New FavouriteContract("SPX500",  "SPX500 Index (Non Expiry)",   27, 0.01D, 0.01D, 1D)
             }
         End Function
 

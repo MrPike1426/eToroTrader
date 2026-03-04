@@ -22,7 +22,7 @@ Namespace TopStepTrader.API.Models.Responses
         <JsonPropertyName("internalSymbolFull")>
         Public Property InternalSymbolFull As String = String.Empty
 
-        <JsonPropertyName("instrumentDisplayName")>
+        <JsonPropertyName("internalInstrumentDisplayName")>
         Public Property DisplayName As String = String.Empty
 
         <JsonPropertyName("instrumentTypeId")>
