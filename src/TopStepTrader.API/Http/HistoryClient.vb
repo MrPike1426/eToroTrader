@@ -58,8 +58,14 @@ Namespace TopStepTrader.API.Http
 
             Dim instrumentId As Integer
             If Not Integer.TryParse(contractId, instrumentId) Then
-                Logger.LogWarning("HistoryClient: contractId '{Id}' is not a numeric instrumentId — cannot fetch candles.", contractId)
-                Return New BarResponse With {.Success = False, .ErrorMessage = $"'{contractId}' is not a valid eToro instrumentId."}
+                ' Try resolving symbol via FavouriteContracts (no network call needed for known instruments)
+                Dim fav = TopStepTrader.Core.Trading.FavouriteContracts.TryGetBySymbol(contractId)
+                If fav IsNot Nothing Then
+                    instrumentId = fav.InstrumentId
+                Else
+                    Logger.LogWarning("HistoryClient: '{Id}' is not a numeric instrumentId and not a known favourite — cannot fetch candles.", contractId)
+                    Return New BarResponse With {.Success = False, .ErrorMessage = $"'{contractId}' is not a valid eToro instrumentId."}
+                End If
             End If
 
             Dim interval = If(BarUnitMap.ContainsKey(unit), BarUnitMap(unit), "FiveMinutes")

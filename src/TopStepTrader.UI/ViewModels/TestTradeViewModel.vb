@@ -422,10 +422,8 @@ Namespace TopStepTrader.UI.ViewModels
             Try
                 ' Access current price from last bar
                 Dim currentPrice = _barHistory.Last().Close
-                Dim tickSize = 0.1D ' MGC tick size (0.1) or assume generic 0.25 (ES)
-                ' Micro Gold (MGC) tick size is 0.1.
-                ' Ideally get from Contract metadata. I'll stick to 0.1 for MGC as requested.
-                If _testTradeContractId.Contains("MGC") Then tickSize = 0.1D Else tickSize = 0.25D
+                Dim fav = FavouriteContracts.TryGetBySymbol(_testTradeContractId)
+                Dim tickSize = If(fav IsNot Nothing, fav.TickSize, 0.01D)
 
                 Dim newSlOffset = 15 * tickSize
                 Dim newTpOffset = 30 * tickSize
@@ -994,18 +992,8 @@ Namespace TopStepTrader.UI.ViewModels
         End Sub
 
         Private Function GetPointValue(contractId As String) As Decimal
-            ''' <summary>
-            ''' Returns the dollar value per point for the given contract.
-            ''' MGC (Micro Gold): $10 per point
-            ''' MES (Micro S&P): $5 per point
-            ''' MNQ (Micro Nasdaq): $2 per point
-            ''' MCL (Micro Crude): $100 per point
-            ''' </summary>
-            Dim cId = contractId.ToUpper()
-            If cId.Contains("MGC") Then Return 10D
-            If cId.Contains("MCL") Then Return 100D
-            If cId.Contains("MNQ") Then Return 2D
-            Return 5D  ' MES default
+            Dim fav = FavouriteContracts.TryGetBySymbol(contractId)
+            Return If(fav IsNot Nothing, fav.PointValue, 1.0D)
         End Function
 
     End Class

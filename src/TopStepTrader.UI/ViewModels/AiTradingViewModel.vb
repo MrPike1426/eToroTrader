@@ -525,8 +525,11 @@ Namespace TopStepTrader.UI.ViewModels
             ' Seed favourite contracts from the shared list (Core\Trading\FavouriteContracts).
             _favoriteContracts = FavouriteContracts.GetDefaults() _
                 .Select(Function(f) New ContractDto With {
-                    .ContractId = f.ContractId, .Name = f.Name,
-                    .TickSize = f.TickSize, .TickValue = f.TickValue
+                    .ContractId  = f.ContractId,
+                    .Name        = f.Name,
+                    .InstrumentId = f.InstrumentId,
+                    .TickSize    = f.TickSize,
+                    .TickValue   = f.TickValue
                 }).ToList()
             For Each fav In _favoriteContracts
                 FilteredContracts.Add(fav)

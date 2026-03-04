@@ -4,24 +4,55 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             d:DesignHeight="30" d:DesignWidth="300"
-             MinHeight="28">
+             d:DesignHeight="30" d:DesignWidth="320"
+             MinHeight="28"
+             Loaded="OnLoaded">
 
+    <!--
+        Instrument selector — shows 6 favourites at the top of every page.
+        User can type to filter the list or search the eToro API for other instruments.
+        ContractId  DP → ticker symbol (e.g. "GOLD")
+        InstrumentId DP → numeric eToro ID (e.g. 18)
+    -->
     <ComboBox x:Name="ContractComboBox"
+              IsEditable="True"
+              IsTextSearchEnabled="False"
+              StaysOpenOnEdit="True"
+              MinWidth="220"
               HorizontalAlignment="Stretch"
-              MinWidth="200"
               SelectionChanged="OnSelectionChanged"
-              Style="{StaticResource UnclippedComboBoxStyle}"
-              ItemContainerStyle="{StaticResource DarkComboBoxItemStyle}">
-        <!--  ItemTemplate creates a NEW TextBlock per render slot (header + each
-              dropdown row). Foreground="White" is a local DP value — the highest
-              possible priority in WPF's property system. Nothing in the system
-              theme can override it.  -->
+              Style="{StaticResource UnclippedComboBoxStyle}">
+
+        <!-- Disable header/separator rows so they cannot be selected -->
+        <ComboBox.ItemContainerStyle>
+            <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboBoxItemStyle}">
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsHeader}" Value="True">
+                        <Setter Property="IsEnabled"   Value="False"/>
+                        <Setter Property="Opacity"     Value="0.55"/>
+                        <Setter Property="Padding"     Value="6,1"/>
+                        <Setter Property="FontSize"    Value="10"/>
+                        <Setter Property="FontStyle"   Value="Italic"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ComboBox.ItemContainerStyle>
+
         <ComboBox.ItemTemplate>
             <DataTemplate>
-                <TextBlock Text="{Binding Display}"
-                           Foreground="White"
-                           VerticalAlignment="Center"/>
+                <TextBlock VerticalAlignment="Center">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Text"       Value="{Binding Display}"/>
+                            <Setter Property="Foreground" Value="White"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsHeader}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
             </DataTemplate>
         </ComboBox.ItemTemplate>
     </ComboBox>

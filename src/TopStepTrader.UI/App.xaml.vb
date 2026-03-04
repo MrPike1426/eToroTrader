@@ -11,10 +11,14 @@ Namespace TopStepTrader.UI
 
         Private _host As IHost
 
+        ''' <summary>Service provider exposed for controls that cannot use constructor DI (e.g. UserControls).</summary>
+        Friend Shared Services As IServiceProvider
+
         Protected Overrides Async Sub OnStartup(e As StartupEventArgs)
             MyBase.OnStartup(e)
 
             _host = AppBootstrapper.BuildHost()
+            Services = _host.Services
             Await _host.StartAsync()
 
             ' ── Start SignalR hub connections ──────────────────────────────

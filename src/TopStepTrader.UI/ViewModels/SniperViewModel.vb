@@ -6,6 +6,7 @@ Imports TopStepTrader.Core.Enums
 Imports TopStepTrader.Core.Events
 Imports TopStepTrader.Core.Interfaces
 Imports TopStepTrader.Core.Models
+Imports TopStepTrader.Core.Trading
 Imports TopStepTrader.Services.Trading
 Imports TopStepTrader.UI.ViewModels.Base
 
@@ -823,25 +824,18 @@ Namespace TopStepTrader.UI.ViewModels
 
         ''' <summary>Price units per tick for the contract (used for bracket order price offsets).</summary>
         Private Shared Function GetTickSize(contractId As String) As Decimal
-            If contractId.Contains("MGC") Then Return 0.10D
-            If contractId.Contains("MCL") Then Return 0.01D
-            Return 0.25D   ' MES, MNQ
+            Dim fav = FavouriteContracts.TryGetBySymbol(contractId)
+            Return If(fav IsNot Nothing, fav.TickSize, 0.01D)
         End Function
 
-        ''' <summary>Dollar P&amp;L per tick move × 1 contract (used by SniperExecutionEngine for display).</summary>
         Private Shared Function GetTickValue(contractId As String) As Decimal
-            If contractId.Contains("MGC") Then Return 1.0D    ' $1.00/tick (10 oz × $0.10)
-            If contractId.Contains("MCL") Then Return 1.0D    ' $1.00/tick (100 bbl × $0.01)
-            If contractId.Contains("MNQ") Then Return 0.5D    ' $0.50/tick (0.25 pts × $2/pt)
-            Return 1.25D                                       ' MES: $1.25/tick (0.25 pts × $5/pt)
+            Dim fav = FavouriteContracts.TryGetBySymbol(contractId)
+            Return If(fav IsNot Nothing, fav.TickValue, 0.01D)
         End Function
 
-        ''' <summary>Dollar value per full price point for BacktestConfiguration.PointValue.</summary>
         Private Shared Function GetPointValue(contractId As String) As Decimal
-            If contractId.Contains("MGC") Then Return 10.0D
-            If contractId.Contains("MCL") Then Return 100.0D
-            If contractId.Contains("MNQ") Then Return 2.0D
-            Return 5.0D   ' MES
+            Dim fav = FavouriteContracts.TryGetBySymbol(contractId)
+            Return If(fav IsNot Nothing, fav.PointValue, 1.0D)
         End Function
 
         ' ══════════════════════════════════════════════════════════════════════
