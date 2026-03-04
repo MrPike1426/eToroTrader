@@ -1,45 +1,33 @@
-Imports System.Net.Http
-Imports System.Threading
 Imports Microsoft.Extensions.Logging
-Imports Microsoft.Extensions.Options
-Imports TopStepTrader.API.Models.Requests
-Imports TopStepTrader.API.Models.Responses
-Imports TopStepTrader.API.RateLimiting
-Imports TopStepTrader.Core.Settings
 
 Namespace TopStepTrader.API.Http
 
+    ''' <summary>
+    ''' eToro has no login endpoint — authentication is handled by static header keys.
+    ''' This client validates that credentials are configured and is otherwise a no-op.
+    ''' </summary>
     Public Class AuthClient
-        Inherits ProjectXHttpClientBase
 
-        Private ReadOnly _settings As ApiSettings
+        Private ReadOnly _credentials As EToroCredentialsProvider
+        Private ReadOnly _logger As ILogger(Of AuthClient)
 
-        Public Sub New(options As IOptions(Of ApiSettings),
-                       httpClientFactory As IHttpClientFactory,
-                       tokenManager As TokenManager,
-                       rateLimiter As RateLimiter,
+        Public Sub New(credentials As EToroCredentialsProvider,
                        logger As ILogger(Of AuthClient))
-            MyBase.New(httpClientFactory, tokenManager, rateLimiter, logger)
-            _settings = options.Value
+            _credentials = credentials
+            _logger = logger
         End Sub
 
-        Public Async Function LoginWithKeyAsync(
-            Optional cancel As CancellationToken = Nothing) As Task(Of AuthResponse)
-
-            Dim request = New LoginKeyRequest With {
-                .UserName = _settings.UserName,
-                .ApiKey = _settings.ApiKey
-            }
-            Dim endpoint = $"{_settings.RestBaseUrl}/api/Auth/loginKey"
-            Return Await PostAsync(Of LoginKeyRequest, AuthResponse)(endpoint, request, cancel:=cancel)
-        End Function
-
-        Public Async Function ValidateTokenAsync(
-            Optional cancel As CancellationToken = Nothing) As Task(Of AuthResponse)
-
-            Dim endpoint = $"{_settings.RestBaseUrl}/api/Auth/validate"
-            ' Validate uses an empty body
-            Return Await PostAsync(Of Object, AuthResponse)(endpoint, New Object(), cancel:=cancel)
+        ''' <summary>
+        ''' Validates that eToro API credentials are present in configuration.
+        ''' Returns True if both ApiKey and UserKey are set; False otherwise.
+        ''' </summary>
+        Public Function ValidateCredentialsAsync() As Task(Of Boolean)
+            If _credentials.IsConfigured Then
+                _logger.LogInformation("eToro credentials present — no login required.")
+                Return Task.FromResult(True)
+            End If
+            _logger.LogError("eToro credentials missing. Set Api:ApiKey and Api:UserKey.")
+            Return Task.FromResult(False)
         End Function
 
     End Class

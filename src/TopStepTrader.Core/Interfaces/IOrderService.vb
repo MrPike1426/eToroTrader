@@ -21,9 +21,8 @@ Namespace TopStepTrader.Core.Interfaces
                                             Optional cancel As CancellationToken = Nothing) As Task(Of Decimal?)
 
         ''' <summary>
-        ''' Queries the TopStepX API directly for orders with status=Working on a specific contract.
-        ''' Does NOT use the local database — the local DB is never updated with fill/cancel status
-        ''' from the exchange, so only the API has ground truth on whether a position is still open.
+        ''' Queries the eToro API directly for open positions on a specific instrument.
+        ''' Does NOT use the local database — only the API has ground truth on live positions.
         ''' </summary>
         Function GetLiveWorkingOrdersAsync(accountId As Long,
                                            contractId As String,

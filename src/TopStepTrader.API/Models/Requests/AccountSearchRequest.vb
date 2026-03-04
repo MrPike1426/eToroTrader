@@ -1,10 +1,10 @@
-Imports System.Text.Json.Serialization
-
 Namespace TopStepTrader.API.Models.Requests
 
+    ''' <summary>
+    ''' eToro account information is retrieved via the portfolio endpoint — no search request body needed.
+    ''' Kept as empty stub to preserve project file reference.
+    ''' </summary>
     Public Class AccountSearchRequest
-        <JsonPropertyName("onlyActiveAccounts")>
-        Public Property OnlyActiveAccounts As Boolean = True
     End Class
 
 End Namespace

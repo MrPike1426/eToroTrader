@@ -1,19 +1,11 @@
-Imports System.Text.Json.Serialization
-
 Namespace TopStepTrader.API.Models.Responses
 
+    ''' <summary>
+    ''' eToro has no login endpoint — authentication is via static headers.
+    ''' This stub is kept for project file compatibility.
+    ''' </summary>
     Public Class AuthResponse
-        <JsonPropertyName("token")>
-        Public Property Token As String = String.Empty
-
-        <JsonPropertyName("success")>
-        Public Property Success As Boolean
-
-        <JsonPropertyName("errorCode")>
-        Public Property ErrorCode As Integer
-
-        <JsonPropertyName("errorMessage")>
-        Public Property ErrorMessage As String
+        Public Property Success As Boolean = True
     End Class
 
 End Namespace

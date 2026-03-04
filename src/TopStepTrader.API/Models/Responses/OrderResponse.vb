@@ -2,77 +2,77 @@ Imports System.Text.Json.Serialization
 
 Namespace TopStepTrader.API.Models.Responses
 
+    ''' <summary>
+    ''' Response from POST /api/v1/trading/execution/demo/market-open-orders/by-units (or by-amount).
+    ''' Returns the orderId of the placed market order.
+    ''' </summary>
     Public Class PlaceOrderResponse
         <JsonPropertyName("orderId")>
         Public Property OrderId As Long
 
-        <JsonPropertyName("success")>
-        Public Property Success As Boolean
-
-        <JsonPropertyName("errorCode")>
-        Public Property ErrorCode As Integer
-
-        <JsonPropertyName("errorMessage")>
-        Public Property ErrorMessage As String
+        ''' <summary>True unless an exception is thrown. Set to False by the client on error.</summary>
+        Public Property Success As Boolean = True
+        Public Property ErrorMessage As String = String.Empty
     End Class
 
+    ''' <summary>
+    ''' Response from DELETE /api/v1/trading/execution/demo/market-open-orders/{orderId}
+    ''' or DELETE /api/v1/trading/execution/demo/limit-orders/{orderId}.
+    ''' </summary>
     Public Class CancelOrderResponse
-        <JsonPropertyName("success")>
-        Public Property Success As Boolean
+        <JsonPropertyName("token")>
+        Public Property Token As String = String.Empty
 
-        <JsonPropertyName("errorCode")>
-        Public Property ErrorCode As Integer
-
-        <JsonPropertyName("errorMessage")>
-        Public Property ErrorMessage As String
+        Public Property Success As Boolean = True
+        Public Property ErrorMessage As String = String.Empty
     End Class
 
+    ''' <summary>
+    ''' Response from GET /api/v1/trading/info/demo/orders/{orderId}.
+    ''' Contains the order status and positions that were opened by this order.
+    ''' </summary>
+    Public Class OrderInfoResponse
+        <JsonPropertyName("orderId")>
+        Public Property OrderId As Long
+
+        <JsonPropertyName("instrumentId")>
+        Public Property InstrumentId As Integer
+
+        <JsonPropertyName("isBuy")>
+        Public Property IsBuy As Boolean
+
+        <JsonPropertyName("amount")>
+        Public Property Amount As Double
+
+        <JsonPropertyName("units")>
+        Public Property Units As Double
+
+        <JsonPropertyName("stopLossRate")>
+        Public Property StopLossRate As Double
+
+        <JsonPropertyName("takeProfitRate")>
+        Public Property TakeProfitRate As Double
+
+        <JsonPropertyName("openDateTime")>
+        Public Property OpenDateTime As String = String.Empty
+
+        <JsonPropertyName("positions")>
+        Public Property Positions As List(Of EToroPositionDto) = New List(Of EToroPositionDto)()
+    End Class
+
+    ''' <summary>Used by OrderService.SearchOrdersAsync — wraps the portfolio response.</summary>
     Public Class OrderSearchResponse
-        <JsonPropertyName("orders")>
+        Public Property Success As Boolean = True
+        Public Property ErrorMessage As String = String.Empty
         Public Property Orders As List(Of OrderDto) = New List(Of OrderDto)()
-
-        <JsonPropertyName("success")>
-        Public Property Success As Boolean
-
-        <JsonPropertyName("errorCode")>
-        Public Property ErrorCode As Integer
-
-        <JsonPropertyName("errorMessage")>
-        Public Property ErrorMessage As String
     End Class
 
+    ''' <summary>Internal DTO mapping an eToro position to a legacy order shape for OrderService.</summary>
     Public Class OrderDto
-        <JsonPropertyName("id")>
-        Public Property Id As Long
-
-        <JsonPropertyName("accountId")>
+        Public Property Id As Long              ' positionId
         Public Property AccountId As Long
-
-        <JsonPropertyName("contractId")>
-        Public Property ContractId As String = String.Empty
-
-        <JsonPropertyName("creationTimestamp")>
-        Public Property CreationTimestamp As Long
-
-        <JsonPropertyName("type")>
-        Public Property OrderType As Integer
-
-        <JsonPropertyName("side")>
-        Public Property Side As Integer
-
-        <JsonPropertyName("size")>
-        Public Property Size As Integer
-
-        <JsonPropertyName("limitPrice")>
-        Public Property LimitPrice As Double?
-
-        <JsonPropertyName("stopPrice")>
-        Public Property StopPrice As Double?
-
-        <JsonPropertyName("status")>
-        Public Property Status As Integer
-
-        <JsonPropertyName("avgFillPrice")>
+        Public Property ContractId As String = String.Empty  ' instrumentId as string
+        Public Property Status As Integer       ' 1 = Working (open position)
         Public Property AvgFillPrice As Double?
     End Class
 

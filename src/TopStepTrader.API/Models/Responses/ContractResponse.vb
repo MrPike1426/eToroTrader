@@ -1,71 +1,66 @@
-Imports System.Text.Json
 Imports System.Text.Json.Serialization
 
 Namespace TopStepTrader.API.Models.Responses
 
-    Public Class ContractAvailableResponse
-        <JsonPropertyName("contracts")>
-        Public Property Contracts As List(Of ContractDto) = New List(Of ContractDto)()
+    ''' <summary>
+    ''' Response from GET /api/v1/market-data/search?internalSymbolFull=TICKER
+    ''' Returns a paged list of matching instruments.
+    ''' </summary>
+    Public Class InstrumentSearchResponse
+        <JsonPropertyName("items")>
+        Public Property Items As List(Of InstrumentDto) = New List(Of InstrumentDto)()
 
-        <JsonPropertyName("success")>
-        Public Property Success As Boolean
-
-        <JsonPropertyName("errorCode")>
-        Public Property ErrorCode As Integer
-
-        <JsonPropertyName("errorMessage")>
-        Public Property ErrorMessage As String
+        Public Property Success As Boolean = True
     End Class
 
-    Public Class ContractDto
-        ''' <summary>
-        ''' Internal API id — declared as JsonElement because the ProjectX API returns it
-        ''' inconsistently (Int32, Int64, float, or quoted string) depending on endpoint version.
-        ''' Use IdText for a safe string; use ContractId for placing orders.
-        ''' </summary>
-        <JsonPropertyName("id")>
-        Public Property Id As JsonElement
+    Public Class InstrumentDto
+        ''' <summary>eToro numeric instrument ID. Use this in all trading/history calls.</summary>
+        <JsonPropertyName("instrumentId")>
+        Public Property InstrumentId As Integer
 
-        ''' <summary>String contract code e.g. "CON.F.US.MES.H26".</summary>
-        <JsonPropertyName("contractId")>
-        Public Property ContractId As String = String.Empty
+        ''' <summary>Full ticker symbol, e.g. "AAPL".</summary>
+        <JsonPropertyName("internalSymbolFull")>
+        Public Property InternalSymbolFull As String = String.Empty
 
-        <JsonPropertyName("name")>
-        Public Property Name As String = String.Empty
+        <JsonPropertyName("instrumentDisplayName")>
+        Public Property DisplayName As String = String.Empty
 
-        <JsonPropertyName("description")>
-        Public Property Description As String = String.Empty
+        <JsonPropertyName("instrumentTypeId")>
+        Public Property InstrumentTypeId As Integer
 
-        <JsonPropertyName("tickSize")>
-        <JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)>
-        Public Property TickSize As Decimal
+        <JsonPropertyName("exchangeId")>
+        Public Property ExchangeId As Integer
 
-        <JsonPropertyName("tickValue")>
-        <JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)>
-        Public Property TickValue As Decimal
-
-        <JsonPropertyName("activeContract")>
-        Public Property ActiveContract As Boolean
-
-        <JsonPropertyName("expirationDate")>
-        Public Property ExpirationDate As String
-
-        ''' <summary>Safe string of the numeric Id regardless of JSON token type.</summary>
-        Public ReadOnly Property IdText As String
+        ''' <summary>Display label used in instrument dropdowns.</summary>
+        Public ReadOnly Property DisplayLabel As String
             Get
-                Select Case Id.ValueKind
-                    Case JsonValueKind.Number : Return Id.GetRawText()
-                    Case JsonValueKind.String : Return Id.GetString()
-                    Case Else : Return String.Empty
-                End Select
+                Return $"{InternalSymbolFull}  — {DisplayName}  [ID:{InstrumentId}]"
             End Get
         End Property
 
-        ''' <summary>Display label used in contract dropdowns.</summary>
+        Public Overrides Function ToString() As String
+            Return DisplayLabel
+        End Function
+    End Class
+
+    ' ── Legacy alias so existing ContractClient callers compile with minimal changes ──
+
+    Public Class ContractAvailableResponse
+        Public Property Success As Boolean = True
+        Public Property Contracts As List(Of ContractDto) = New List(Of ContractDto)()
+    End Class
+
+    Public Class ContractDto
+        Public Property ContractId As String = String.Empty   ' ticker symbol
+        Public Property Name As String = String.Empty
+        Public Property Description As String = String.Empty
+        Public Property InstrumentId As Integer
+        Public Property TickSize As Decimal
+        Public Property TickValue As Decimal
+
         Public ReadOnly Property DisplayLabel As String
             Get
-                Dim code = If(String.IsNullOrWhiteSpace(ContractId), $"#{IdText}", ContractId)
-                Return $"{Name}  [{code}]"
+                Return $"{Name}  [{ContractId}]"
             End Get
         End Property
 

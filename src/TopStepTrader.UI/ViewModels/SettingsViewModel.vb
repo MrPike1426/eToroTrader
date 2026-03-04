@@ -55,7 +55,7 @@ Namespace TopStepTrader.UI.ViewModels
 
         Public ReadOnly Property ApiBaseUrl As String
             Get
-                Return _apiSettings.RestBaseUrl
+                Return _apiSettings.BaseUrl
             End Get
         End Property
 

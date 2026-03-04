@@ -3,6 +3,7 @@ Imports Microsoft.Extensions.Logging
 Imports TopStepTrader.API.Http
 Imports TopStepTrader.API.Hubs
 Imports TopStepTrader.API.Models.Requests
+Imports TopStepTrader.API.Models.Responses
 Imports TopStepTrader.Core.Enums
 Imports TopStepTrader.Core.Events
 Imports TopStepTrader.Core.Interfaces
@@ -12,17 +13,19 @@ Imports TopStepTrader.Data.Repositories
 Namespace TopStepTrader.Services.Trading
 
     ''' <summary>
-    ''' Implements IOrderService — places/cancels orders via the ProjectX API
-    ''' and maintains an audit trail in the database.
-    ''' The contract ID passed into PlaceOrderAsync is a numeric ID;
-    ''' we store it as-is but the API wants a string contract code.
-    ''' Callers must set Order.Notes to the string contract code when available.
+    ''' Implements IOrderService using the eToro DEMO trading API.
+    ''' Key differences from TopStepX:
+    '''   - Authentication: static header keys (no JWT)
+    '''   - Order identification: eToro uses instrumentId (integer), not string contractId
+    '''   - Stop Loss / Take Profit: set natively on the open order — no separate bracket orders
+    '''   - Positions: identified by positionId (stored in Order.ExternalPositionId)
+    '''   - Close: POST market-close-orders/positions/{positionId}
+    '''   - Cancel pending: DELETE market-open-orders/{orderId}
     ''' </summary>
     Public Class OrderService
         Implements IOrderService
 
         Private ReadOnly _orderClient As OrderClient
-        Private ReadOnly _hubClient As UserHubClient
         Private ReadOnly _orderRepo As OrderRepository
         Private ReadOnly _logger As ILogger(Of OrderService)
 
@@ -35,106 +38,150 @@ Namespace TopStepTrader.Services.Trading
                        orderRepo As OrderRepository,
                        logger As ILogger(Of OrderService))
             _orderClient = orderClient
-            _hubClient = hubClient
             _orderRepo = orderRepo
             _logger = logger
-
-            ' Bridge SignalR events to IOrderService consumers
-            AddHandler _hubClient.PositionUpdated, AddressOf OnHubPositionUpdated
-        End Sub
-
-        Private Sub OnHubPositionUpdated(sender As Object, e As API.Hubs.PositionUpdateEventArgs)
-            ' Map API-layer DTO to Core-layer EventArgs
-            ' UserPositionData: ContractId, NetPos, AvgPrice, etc.
-            Dim coreArgs As New TopStepTrader.Core.Events.PositionUpdateEventArgs(e.PositionData.ContractId,
-                                                        e.PositionData.NetPos,
-                                                        e.PositionData.AvgPrice)
-            RaiseEvent PositionUpdated(Me, coreArgs)
         End Sub
 
         Public Async Function PlaceOrderAsync(order As Order) As Task(Of Order) _
             Implements IOrderService.PlaceOrderAsync
 
-            ' Map domain order to API request
-            ' Notes field carries the string contractId from the contract search
-            Dim contractCode = If(Not String.IsNullOrWhiteSpace(order.ContractId), order.ContractId, order.Notes)
-
-            Dim request = New PlaceOrderRequest With {
-                .AccountId = order.AccountId,
-                .ContractId = contractCode,
-                .OrderType = MapOrderType(order.OrderType),
-                .Side = CInt(order.Side),
-                .Size = order.Quantity,
-                .LimitPrice = If(order.LimitPrice.HasValue, CDbl(order.LimitPrice.Value), CType(Nothing, Double?)),
-                .StopPrice = If(order.StopPrice.HasValue, CDbl(order.StopPrice.Value), CType(Nothing, Double?))
-            }
-
-            _logger.LogInformation("Placing {Type} {Side} x{Qty} on {Contract}",
-                                   order.OrderType, order.Side, order.Quantity, contractCode)
-
             order.PlacedAt = DateTimeOffset.UtcNow
             order.Status = OrderStatus.Pending
-
-            ' Persist before sending (audit trail; repo maps domain → entity internally)
             order.Id = Await _orderRepo.SaveOrderAsync(order)
 
-            ' VB.NET cannot Await inside Catch — capture exception and await updates after Try/Catch
+            _logger.LogInformation(
+                "Placing eToro DEMO {Side} x{Qty} InstrumentId={InstrId} SL={SL} TP={TP}",
+                order.Side, order.Quantity, order.InstrumentId, order.StopLossRate, order.TakeProfitRate)
+
             Dim caughtEx As Exception = Nothing
             Try
-                Dim response = Await _orderClient.PlaceOrderAsync(request)
+                Dim response As PlaceOrderResponse
+
+                If order.Amount.HasValue Then
+                    ' Open by USD amount
+                    Dim req = New OpenMarketOrderByAmountRequest With {
+                        .InstrumentId = order.InstrumentId,
+                        .IsBuy = (order.Side = OrderSide.Buy),
+                        .Leverage = If(order.Leverage > 0, order.Leverage, 1),
+                        .Amount = CDbl(order.Amount.Value),
+                        .StopLossRate = If(order.StopLossRate.HasValue, CDbl(order.StopLossRate.Value), CType(Nothing, Double?)),
+                        .TakeProfitRate = If(order.TakeProfitRate.HasValue, CDbl(order.TakeProfitRate.Value), CType(Nothing, Double?))
+                    }
+                    response = Await _orderClient.PlaceOrderByAmountAsync(req)
+                Else
+                    ' Open by units/quantity
+                    Dim req = New OpenMarketOrderByUnitsRequest With {
+                        .InstrumentId = order.InstrumentId,
+                        .IsBuy = (order.Side = OrderSide.Buy),
+                        .Leverage = If(order.Leverage > 0, order.Leverage, 1),
+                        .Units = CDbl(order.Quantity),
+                        .StopLossRate = If(order.StopLossRate.HasValue, CDbl(order.StopLossRate.Value), CType(Nothing, Double?)),
+                        .TakeProfitRate = If(order.TakeProfitRate.HasValue, CDbl(order.TakeProfitRate.Value), CType(Nothing, Double?))
+                    }
+                    response = Await _orderClient.PlaceOrderByUnitsAsync(req)
+                End If
 
                 If response.Success Then
                     order.ExternalOrderId = response.OrderId
                     order.Status = OrderStatus.Working
                     Await _orderRepo.UpdateOrderStatusAsync(order.Id, order.Status, order.ExternalOrderId)
-                    _logger.LogInformation("Order accepted by exchange. ExternalId={Ext}", order.ExternalOrderId)
+                    _logger.LogInformation("eToro order accepted. orderId={Ext}", order.ExternalOrderId)
+
+                    ' Resolve positionId asynchronously so callers can close by position
+                    Await ResolvePositionIdAsync(order)
                 Else
                     order.Status = OrderStatus.Rejected
                     Await _orderRepo.UpdateOrderStatusAsync(order.Id, order.Status)
-                    _logger.LogWarning("Order rejected: {Msg}", response.ErrorMessage)
+                    _logger.LogWarning("eToro order rejected: {Msg}", response.ErrorMessage)
                     RaiseEvent OrderRejected(Me, New OrderRejectedEventArgs(order, If(response.ErrorMessage, "Unknown")))
                 End If
             Catch ex As Exception
                 caughtEx = ex
             End Try
 
-            ' Handle exception after try-catch so Await is legal
             If caughtEx IsNot Nothing Then
                 order.Status = OrderStatus.Rejected
                 Await _orderRepo.UpdateOrderStatusAsync(order.Id, order.Status)
-                _logger.LogError(caughtEx, "Exception placing order")
+                _logger.LogError(caughtEx, "Exception placing eToro order")
                 RaiseEvent OrderRejected(Me, New OrderRejectedEventArgs(order, caughtEx.Message))
             End If
 
             Return order
         End Function
 
+        ''' <summary>
+        ''' Queries the order-info endpoint to discover the positionId opened by this order.
+        ''' Stores the positionId in Order.ExternalPositionId for later close calls.
+        ''' </summary>
+        Private Async Function ResolvePositionIdAsync(order As Order) As Task
+            If Not order.ExternalOrderId.HasValue Then Return
+            Try
+                Dim info = Await _orderClient.GetOrderInfoAsync(order.ExternalOrderId.Value)
+                Dim pos = info?.Positions?.FirstOrDefault()
+                If pos IsNot Nothing Then
+                    order.ExternalPositionId = pos.PositionId
+                    order.FillPrice = CDec(pos.OpenRate)
+                    order.FilledAt = DateTimeOffset.UtcNow
+                    order.Status = OrderStatus.Filled
+                    Await _orderRepo.UpdateOrderStatusAsync(order.Id, order.Status, order.ExternalOrderId)
+                    _logger.LogInformation("Position resolved: positionId={PosId} fillPrice={Price}",
+                                           order.ExternalPositionId, order.FillPrice)
+                End If
+            Catch ex As Exception
+                _logger.LogWarning(ex, "Could not resolve positionId for orderId={Id}", order.ExternalOrderId)
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' Closes an open position (by ExternalPositionId) or cancels a pending order (by ExternalOrderId).
+        ''' </summary>
         Public Async Function CancelOrderAsync(orderId As Long) As Task(Of Boolean) _
             Implements IOrderService.CancelOrderAsync
-            _logger.LogInformation("Cancelling order {Id}", orderId)
-            Dim response = Await _orderClient.CancelOrderAsync(orderId)
-            If response.Success Then
-                Await _orderRepo.UpdateOrderStatusAsync(orderId, OrderStatus.Cancelled)
-            Else
-                _logger.LogWarning("Cancel failed for order {Id}: {Msg}", orderId, response.ErrorMessage)
+
+            ' Try to close by positionId first (open position)
+            Dim dbOrder = (Await _orderRepo.GetOpenOrdersAsync()).
+                FirstOrDefault(Function(o) o.ExternalOrderId = orderId OrElse o.ExternalPositionId = orderId)
+
+            Dim caughtEx As Exception = Nothing
+            Dim success = False
+            Try
+                If dbOrder IsNot Nothing AndAlso dbOrder.ExternalPositionId.HasValue Then
+                    _logger.LogInformation("Closing eToro position positionId={PosId}", dbOrder.ExternalPositionId)
+                    Dim closeResp = Await _orderClient.ClosePositionAsync(dbOrder.ExternalPositionId.Value)
+                    success = closeResp.Success
+                Else
+                    _logger.LogInformation("Cancelling eToro pending open order orderId={Id}", orderId)
+                    Dim cancelResp = Await _orderClient.CancelPendingOpenOrderAsync(orderId)
+                    success = cancelResp.Success
+                End If
+            Catch ex As Exception
+                caughtEx = ex
+            End Try
+
+            If caughtEx IsNot Nothing Then
+                _logger.LogWarning(caughtEx, "Exception cancelling/closing eToro order {Id}", orderId)
+                Return False
             End If
-            Return response.Success
+
+            If success AndAlso dbOrder IsNot Nothing Then
+                Await _orderRepo.UpdateOrderStatusAsync(dbOrder.Id, OrderStatus.Cancelled)
+            End If
+            Return success
         End Function
 
         Public Async Function CancelAllOpenOrdersAsync() As Task _
             Implements IOrderService.CancelAllOpenOrdersAsync
-            ' Cancels all locally-known open orders; in production you'd also call a bulk cancel endpoint
-            _logger.LogWarning("CancelAllOpenOrders called — cancelling all known open orders")
+            _logger.LogWarning("CancelAllOpenOrders — closing all known open eToro positions")
             Dim openOrders = Await _orderRepo.GetOpenOrdersAsync()
             Dim tasks = openOrders.
-                Where(Function(o) o.ExternalOrderId.HasValue).
-                Select(Function(o) CancelOrderAsync(o.ExternalOrderId.Value))
+                Where(Function(o) o.ExternalOrderId.HasValue OrElse o.ExternalPositionId.HasValue).
+                Select(Function(o) CancelOrderAsync(
+                    If(o.ExternalPositionId.HasValue, o.ExternalPositionId.Value, o.ExternalOrderId.Value)))
             Await Task.WhenAll(tasks)
         End Function
 
         Public Async Function GetOpenOrdersAsync(accountId As Long) As Task(Of IEnumerable(Of Order)) _
             Implements IOrderService.GetOpenOrdersAsync
-            ' Repository already returns domain Order objects
             Return Await _orderRepo.GetOpenOrdersAsync(accountId)
         End Function
 
@@ -142,7 +189,6 @@ Namespace TopStepTrader.Services.Trading
                                                     from As DateTime,
                                                     [to] As DateTime) As Task(Of IEnumerable(Of Order)) _
             Implements IOrderService.GetOrderHistoryAsync
-            ' Repository already returns domain Order objects
             Return Await _orderRepo.GetOrderHistoryAsync(accountId, from, [to])
         End Function
 
@@ -151,15 +197,13 @@ Namespace TopStepTrader.Services.Trading
                                                          Optional cancel As CancellationToken = Nothing) As Task(Of Decimal?) _
             Implements IOrderService.TryGetOrderFillPriceAsync
             Try
-                Dim resp = Await _orderClient.SearchOrdersAsync(accountId, cancel:=cancel)
-                If resp?.Success = True AndAlso resp.Orders IsNot Nothing Then
-                    Dim match = resp.Orders.FirstOrDefault(Function(o) o.Id = externalOrderId)
-                    If match IsNot Nothing AndAlso match.AvgFillPrice.HasValue Then
-                        Return CDec(match.AvgFillPrice.Value)
-                    End If
+                Dim resp = Await _orderClient.SearchOrdersAsync(cancel)
+                Dim match = resp?.Orders?.FirstOrDefault(Function(o) o.Id = externalOrderId)
+                If match IsNot Nothing AndAlso match.AvgFillPrice.HasValue Then
+                    Return CDec(match.AvgFillPrice.Value)
                 End If
             Catch ex As Exception
-                _logger.LogWarning(ex, "Could not retrieve fill price for order {Id}", externalOrderId)
+                _logger.LogWarning(ex, "Could not retrieve fill price for orderId={Id}", externalOrderId)
             End Try
             Return Nothing
         End Function
@@ -168,11 +212,9 @@ Namespace TopStepTrader.Services.Trading
                                                          contractId As String,
                                                          Optional cancel As CancellationToken = Nothing) As Task(Of IEnumerable(Of Order)) _
             Implements IOrderService.GetLiveWorkingOrdersAsync
-            ' Compare against the raw API integer 1 (Working), NOT our local enum, because the
-            ' local OrderStatus enum values diverge from the API status codes at value ≥ 3.
             Const ApiStatusWorking As Integer = 1
             Try
-                Dim resp = Await _orderClient.SearchOrdersAsync(accountId, cancel:=cancel)
+                Dim resp = Await _orderClient.SearchOrdersAsync(cancel)
                 If resp?.Success = True AndAlso resp.Orders IsNot Nothing Then
                     Dim working = resp.Orders _
                         .Where(Function(o) o.Status = ApiStatusWorking AndAlso
@@ -180,31 +222,18 @@ Namespace TopStepTrader.Services.Trading
                                                          StringComparison.OrdinalIgnoreCase)) _
                         .Select(Function(o) New Order With {
                             .ExternalOrderId = o.Id,
-                            .AccountId = o.AccountId,
+                            .ExternalPositionId = o.Id,
                             .ContractId = o.ContractId,
                             .Status = OrderStatus.Working
                         }).ToList()
-                    _logger.LogDebug("GetLiveWorkingOrders: {Count} working order(s) for {Contract}",
+                    _logger.LogDebug("GetLiveWorkingOrders: {Count} open position(s) for {Contract}",
                                      working.Count, contractId)
                     Return working
                 End If
             Catch ex As Exception
-                _logger.LogWarning(ex, "GetLiveWorkingOrdersAsync failed for {AccountId}/{ContractId}",
-                                   accountId, contractId)
+                _logger.LogWarning(ex, "GetLiveWorkingOrdersAsync failed for instrument {ContractId}", contractId)
             End Try
             Return Enumerable.Empty(Of Order)()
-        End Function
-
-        ' ─── Mapping helpers ────────────────────────────────────────────────────
-
-        Private Shared Function MapOrderType(ot As OrderType) As Integer
-            Select Case ot
-                Case OrderType.Limit : Return 1
-                Case OrderType.Market : Return 2
-                Case OrderType.StopOrder : Return 3
-                Case OrderType.StopLimit : Return 4
-                Case Else : Return 2
-            End Select
         End Function
 
     End Class

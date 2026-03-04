@@ -134,10 +134,10 @@ Namespace TopStepTrader.UI.ViewModels
             Set(value As ContractDto)
                 If SetProperty(_selectedContract, value) AndAlso value IsNot Nothing Then
                     IsContractDropDownOpen = False
-                    ' Auto-fill the Contract ID box from whichever field the API returned
+                    ' Auto-fill the Contract ID box from the ticker symbol
                     Dim id = If(Not String.IsNullOrWhiteSpace(value.ContractId),
                                 value.ContractId,
-                                value.IdText)
+                                value.InstrumentId.ToString())
                     SelectedContractId = id
                 End If
             End Set
@@ -729,9 +729,7 @@ Namespace TopStepTrader.UI.ViewModels
                                  StatusText = "● Idle"
                              Else
                                  IsContractDropDownOpen = False
-                                 Dim apiErr = If(Not String.IsNullOrWhiteSpace(resp?.ErrorMessage),
-                                                 $" ({resp.ErrorMessage})", "")
-                                 StatusText = $"⚠ No contracts found for '{trimmed}'{apiErr}"
+                                 StatusText = $"⚠ No contracts found for '{trimmed}'"
                              End If
                          End Sub)
 

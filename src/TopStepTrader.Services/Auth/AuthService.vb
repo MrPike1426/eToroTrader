@@ -5,63 +5,59 @@ Imports TopStepTrader.Core.Interfaces
 Namespace TopStepTrader.Services.Auth
 
     ''' <summary>
-    ''' Implements IAuthService by delegating to the API-layer TokenManager.
-    ''' The TokenManager holds the actual JWT and manages refresh internally.
+    ''' Implements IAuthService for eToro.
+    ''' eToro authenticates via static API key headers — there is no login endpoint
+    ''' and no JWT token lifecycle. This service validates that credentials are configured.
     ''' </summary>
     Public Class AuthService
         Implements IAuthService
 
-        Private ReadOnly _tokenManager As TokenManager
+        Private ReadOnly _credentials As EToroCredentialsProvider
         Private ReadOnly _logger As ILogger(Of AuthService)
 
-        Public Sub New(tokenManager As TokenManager,
+        Public Sub New(credentials As EToroCredentialsProvider,
                        logger As ILogger(Of AuthService))
-            _tokenManager = tokenManager
+            _credentials = credentials
             _logger = logger
         End Sub
 
         Public ReadOnly Property CurrentToken As String Implements IAuthService.CurrentToken
             Get
-                Return If(_tokenManager.CurrentToken, String.Empty)
+                Return String.Empty  ' eToro uses header keys, not bearer tokens
             End Get
         End Property
 
         Public ReadOnly Property TokenExpiresAt As DateTimeOffset Implements IAuthService.TokenExpiresAt
             Get
-                Return _tokenManager.TokenExpiresAt   ' Actual property name on TokenManager
+                Return DateTimeOffset.MaxValue  ' Static keys do not expire
             End Get
         End Property
 
         Public ReadOnly Property IsAuthenticated As Boolean Implements IAuthService.IsAuthenticated
             Get
-                Return _tokenManager.IsAuthenticated   ' Actual property name on TokenManager
+                Return _credentials.IsConfigured
             End Get
         End Property
 
-        Public Async Function LoginAsync(userName As String, apiKey As String) As Task(Of String) _
+        Public Function LoginAsync(userName As String, apiKey As String) As Task(Of String) _
             Implements IAuthService.LoginAsync
-            _logger.LogInformation("Logging in as {User}", userName)
-            ' ForceRefreshAsync returns Task (not Task(Of String)); read CurrentToken after
-            Await _tokenManager.ForceRefreshAsync()
-            _logger.LogInformation("Login successful, token expires at {Exp}", _tokenManager.TokenExpiresAt)
-            Return _tokenManager.CurrentToken
+            ' eToro has no login endpoint — validate credentials are present
+            If _credentials.IsConfigured Then
+                _logger.LogInformation("eToro credentials are configured — no login required.")
+            Else
+                _logger.LogError("eToro credentials not configured. Set Api:ApiKey and Api:UserKey in appsettings.")
+            End If
+            Return Task.FromResult(If(_credentials.IsConfigured, "configured", String.Empty))
         End Function
 
-        Public Async Function ValidateTokenAsync() As Task(Of Boolean) _
+        Public Function ValidateTokenAsync() As Task(Of Boolean) _
             Implements IAuthService.ValidateTokenAsync
-            Try
-                Dim token = Await _tokenManager.GetValidTokenAsync()
-                Return Not String.IsNullOrEmpty(token)
-            Catch ex As Exception
-                _logger.LogWarning(ex, "Token validation failed")
-                Return False
-            End Try
+            Return Task.FromResult(_credentials.IsConfigured)
         End Function
 
-        Public Async Function RefreshTokenAsync() As Task(Of String) _
+        Public Function RefreshTokenAsync() As Task(Of String) _
             Implements IAuthService.RefreshTokenAsync
-            Await _tokenManager.ForceRefreshAsync()
-            Return _tokenManager.CurrentToken
+            Return Task.FromResult(String.Empty)  ' No token refresh for eToro
         End Function
 
     End Class

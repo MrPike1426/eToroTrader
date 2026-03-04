@@ -1,32 +1,15 @@
-Imports System.Text.Json.Serialization
-
 Namespace TopStepTrader.API.Models.Requests
 
+    ''' <summary>
+    ''' eToro historical candles are fetched via GET with path parameters — no POST body needed.
+    ''' Endpoint: GET /api/v1/market-data/instruments/{instrumentId}/history/candles/{direction}/{interval}/{candlesCount}
+    ''' Kept as a stub for project file compatibility.
+    ''' </summary>
     Public Class RetrieveBarsRequest
-        <JsonPropertyName("contractId")>
-        Public Property ContractId As String = String.Empty
-
-        ''' <summary>1=1min, 2=5min, 3=15min, 4=30min, 5=1hr, 6=1day</summary>
-        <JsonPropertyName("unit")>
-        Public Property Unit As Integer = 2
-
-        ''' <summary>Same as Unit — required by API as separate field</summary>
-        <JsonPropertyName("unitNumber")>
-        Public Property UnitNumber As Integer = 2
-
-        ''' <summary>Maximum number of bars to return</summary>
-        <JsonPropertyName("limit")>
-        Public Property Limit As Integer = 500
-
-        ''' <summary>false = simulated/paper account data</summary>
-        <JsonPropertyName("live")>
-        Public Property Live As Boolean = False
-
-        <JsonPropertyName("startTime")>
-        Public Property StartTime As String = String.Empty
-
-        <JsonPropertyName("endTime")>
-        Public Property EndTime As String = String.Empty
+        Public Property InstrumentId As Integer
+        Public Property Direction As String = "desc"
+        Public Property Interval As String = "FiveMinutes"
+        Public Property CandlesCount As Integer = 500
     End Class
 
 End Namespace

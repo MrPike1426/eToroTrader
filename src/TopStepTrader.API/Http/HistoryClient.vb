@@ -2,7 +2,6 @@ Imports System.Net.Http
 Imports System.Threading
 Imports Microsoft.Extensions.Logging
 Imports Microsoft.Extensions.Options
-Imports TopStepTrader.API.Models.Requests
 Imports TopStepTrader.API.Models.Responses
 Imports TopStepTrader.API.RateLimiting
 Imports TopStepTrader.Core.Settings
@@ -10,67 +9,89 @@ Imports TopStepTrader.Core.Settings
 Namespace TopStepTrader.API.Http
 
     ''' <summary>
-    ''' Fetches historical price bars. Rate limited to 50 req/30s.
-    ''' All calls go through the history slot on RateLimiter.
+    ''' Fetches OHLCV candle history from the eToro market data API.
+    ''' GET /api/v1/market-data/instruments/{instrumentId}/history/candles/{direction}/{interval}/{count}
+    ''' Max 1000 candles per request.
     ''' </summary>
     Public Class HistoryClient
-        Inherits ProjectXHttpClientBase
+        Inherits EToroHttpClientBase
 
         Private ReadOnly _settings As ApiSettings
 
-        ''' <summary>ProjectX bar unit codes → minutes mapping</summary>
+        ''' <summary>Maps BarTimeframe integer codes to eToro interval strings.</summary>
         Public Shared ReadOnly BarUnitMap As New Dictionary(Of Integer, String) From {
-            {1, "1 min"}, {2, "5 min"}, {3, "15 min"},
-            {4, "30 min"}, {5, "1 hr"}, {6, "1 day"}
+            {1, "OneMinute"},
+            {2, "FiveMinutes"},
+            {3, "FifteenMinutes"},
+            {4, "ThirtyMinutes"},
+            {5, "OneHour"},
+            {6, "OneDay"}
         }
 
         Public Sub New(options As IOptions(Of ApiSettings),
                        httpClientFactory As IHttpClientFactory,
-                       tokenManager As TokenManager,
+                       credentials As EToroCredentialsProvider,
                        rateLimiter As RateLimiter,
                        logger As ILogger(Of HistoryClient))
-            MyBase.New(httpClientFactory, tokenManager, rateLimiter, logger)
+            MyBase.New(httpClientFactory, credentials, rateLimiter, logger)
             _settings = options.Value
         End Sub
 
         ''' <summary>
-        ''' Retrieve historical bars. Uses the history-specific rate limit slot.
+        ''' Retrieves historical candles for an instrument and maps them to the legacy BarResponse shape.
         ''' </summary>
-        ''' <param name="contractId">String contract ID e.g. "CON.F.US.EP.H26"</param>
-        ''' <param name="unit">1=1min, 2=5min, 3=15min, 4=30min, 5=1hr, 6=1day</param>
-        ''' <param name="unitsBack">Number of bars to fetch (max ~500 per call)</param>
-        Public Function RetrieveBarsAsync(contractId As String,
-                                          unit As Integer,
-                                          unitNumber As Integer,
-                                          unitsBack As Integer,
-                                          Optional startTime As DateTimeOffset? = Nothing,
-                                          Optional endTime As DateTimeOffset? = Nothing,
-                                          Optional cancel As CancellationToken = Nothing) As Task(Of BarResponse)
+        ''' <param name="contractId">
+        '''   Ticker symbol (e.g. "AAPL") or numeric instrumentId as string (e.g. "1001").
+        '''   Must be parseable as an integer for the eToro endpoint.
+        ''' </param>
+        ''' <param name="unit">Bar timeframe code: 1=1min, 2=5min, 3=15min, 4=30min, 5=1hr, 6=1day</param>
+        ''' <param name="unitNumber">Unused — kept for interface compatibility.</param>
+        ''' <param name="unitsBack">Number of candles to fetch (max 1000).</param>
+        Public Async Function RetrieveBarsAsync(
+            contractId As String,
+            unit As Integer,
+            unitNumber As Integer,
+            unitsBack As Integer,
+            Optional startTime As DateTimeOffset? = Nothing,
+            Optional endTime As DateTimeOffset? = Nothing,
+            Optional cancel As CancellationToken = Nothing) As Task(Of BarResponse)
 
-            Dim request As New RetrieveBarsRequest()
-            request.ContractId = contractId
-            request.Unit = unit
-            request.UnitNumber = unitNumber
-            request.Limit = unitsBack
-            request.Live = False
-            ' If caller didn't provide a startTime, send an empty string so the API
-            ' returns the most recent N bars rather than enforcing a 6-month window.
-            If startTime.HasValue Then
-                request.StartTime = startTime.Value.ToString("O")
-            Else
-                request.StartTime = String.Empty
+            Dim instrumentId As Integer
+            If Not Integer.TryParse(contractId, instrumentId) Then
+                Logger.LogWarning("HistoryClient: contractId '{Id}' is not a numeric instrumentId — cannot fetch candles.", contractId)
+                Return New BarResponse With {.Success = False, .ErrorMessage = $"'{contractId}' is not a valid eToro instrumentId."}
             End If
-            If endTime.HasValue Then
-                request.EndTime = endTime.Value.ToString("O")
-            Else
-                request.EndTime = DateTimeOffset.UtcNow.ToString("O")
-            End If
-            Dim endpoint = $"{_settings.RestBaseUrl}/api/History/retrieveBars"
 
-            ' useHistoryLimit:=True to apply the stricter 50/30s window
-            Return PostAsync(Of RetrieveBarsRequest, BarResponse)(endpoint, request,
-                                                                   useHistoryLimit:=True,
-                                                                   cancel:=cancel)
+            Dim interval = If(BarUnitMap.ContainsKey(unit), BarUnitMap(unit), "FiveMinutes")
+            Dim count = Math.Min(Math.Max(unitsBack, 1), 1000)
+            Dim endpoint = $"{_settings.BaseUrl}/api/v1/market-data/instruments/{instrumentId}/history/candles/desc/{interval}/{count}"
+
+            Logger.LogInformation("Fetching {Count} {Interval} candles for instrument {Id}", count, interval, instrumentId)
+            Dim candlesResp = Await GetAsync(Of CandlesResponse)(endpoint, cancel)
+
+            ' Flatten the nested candle structure into the legacy BarDto list
+            Dim bars As New List(Of BarDto)
+            If candlesResp?.Candles IsNot Nothing Then
+                For Each instrGroup In candlesResp.Candles
+                    For Each c In instrGroup.Candles
+                        bars.Add(New BarDto With {
+                            .Timestamp = c.FromDate,
+                            .Open = c.Open,
+                            .High = c.High,
+                            .Low = c.Low,
+                            .Close = c.Close,
+                            .Volume = CLng(c.Volume)
+                        })
+                    Next
+                Next
+                ' eToro returns newest-first (desc); reverse so oldest bar is first
+                bars.Reverse()
+            End If
+
+            Return New BarResponse With {
+                .Success = True,
+                .Bars = bars
+            }
         End Function
 
     End Class

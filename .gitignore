@@ -14,6 +14,9 @@
 *Topstep API Key*
 *api_key*
 *apikey*
+DAMO_DEMO.txt
+*_DEMO.txt
+*_REAL.txt
 
 # Keep the template (no secrets)
 !**/appsettings.template.json

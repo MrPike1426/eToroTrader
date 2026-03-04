@@ -1,12 +1,10 @@
-Imports System.Text.Json.Serialization
-
 Namespace TopStepTrader.API.Models.Requests
 
+    ''' <summary>
+    ''' eToro instrument search is done via GET /api/v1/market-data/search with query parameters.
+    ''' No POST body is used. Kept as a stub for project file compatibility.
+    ''' </summary>
     Public Class ContractAvailableRequest
-        <JsonPropertyName("live")>
-        Public Property Live As Boolean = True
-
-        <JsonPropertyName("searchText")>
         Public Property SearchText As String = String.Empty
     End Class
 

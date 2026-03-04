@@ -6,7 +6,8 @@ Imports TopStepTrader.Core.Models
 Namespace TopStepTrader.Services.Market
 
     ''' <summary>
-    ''' Implements IAccountService by calling the ProjectX Account/search endpoint.
+    ''' Implements IAccountService by calling the eToro demo portfolio endpoint.
+    ''' Available balance = clientPortfolio.credit (USD available for new trades).
     ''' </summary>
     Public Class AccountService
         Implements IAccountService
@@ -21,9 +22,9 @@ Namespace TopStepTrader.Services.Market
 
         Public Async Function GetActiveAccountsAsync() As Task(Of IEnumerable(Of Account)) _
             Implements IAccountService.GetActiveAccountsAsync
-            Dim response = Await _accountClient.SearchAccountsAsync(onlyActive:=True)
+            Dim response = Await _accountClient.SearchAccountsAsync()
             If response Is Nothing OrElse Not response.Success Then
-                _logger.LogWarning("Account search failed: {Msg}", response?.ErrorMessage)
+                _logger.LogWarning("eToro portfolio fetch failed")
                 Return Enumerable.Empty(Of Account)()
             End If
             Return response.Accounts.Select(Function(a) New Account With {
@@ -32,7 +33,7 @@ Namespace TopStepTrader.Services.Market
                 .Balance = a.Balance,
                 .CanTrade = a.CanTrade,
                 .IsVisible = a.IsVisible,
-                .StartingBalance = a.Balance  ' Approximate — real starting balance from combine rules
+                .StartingBalance = a.Balance
             })
         End Function
 
