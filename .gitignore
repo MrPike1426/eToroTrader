@@ -12,8 +12,8 @@
 **/appsettings.Local.json
 **/*.apikey
 *Topstep API Key*
-*api_key*
-*apikey*
+*api_key*.json
+*api_key*.txt
 DAMO_DEMO.txt
 *_DEMO.txt
 *_REAL.txt
