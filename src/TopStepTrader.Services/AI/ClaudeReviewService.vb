@@ -4,6 +4,7 @@ Imports System.Text.Json.Serialization
 Imports System.Threading
 Imports Microsoft.Extensions.Logging
 Imports Microsoft.Extensions.Options
+Imports TopStepTrader.Core.Interfaces
 Imports TopStepTrader.Core.Models
 Imports TopStepTrader.Core.Settings
 
@@ -17,6 +18,7 @@ Namespace TopStepTrader.Services.AI
     Public Class ClaudeReviewService
 
         Private ReadOnly _settings As ClaudeSettings
+        Private ReadOnly _apiKeyStore As IApiKeyStore
         Private ReadOnly _logger As ILogger(Of ClaudeReviewService)
         Private Shared ReadOnly _http As New HttpClient()
 
@@ -40,10 +42,22 @@ Namespace TopStepTrader.Services.AI
             "Note your knowledge has a cutoff date — flag if live data is needed. " &
             "Keep your total response under 150 words."
 
-        Public Sub New(options As IOptions(Of ClaudeSettings), logger As ILogger(Of ClaudeReviewService))
+        Public Sub New(options As IOptions(Of ClaudeSettings), apiKeyStore As IApiKeyStore, logger As ILogger(Of ClaudeReviewService))
             _settings = options.Value
+            _apiKeyStore = apiKeyStore
             _logger = logger
         End Sub
+
+        ''' <summary>
+        ''' Resolves the active Claude API key — prefers the key stored on the API Keys
+        ''' page (local apikeys.json) and falls back to appsettings.json for backward
+        ''' compatibility with existing deployments.
+        ''' </summary>
+        Private Function ResolveApiKey() As String
+            Dim stored = _apiKeyStore.Load().ClaudeApiKey
+            If Not String.IsNullOrWhiteSpace(stored) Then Return stored
+            Return _settings.ApiKey
+        End Function
 
         ''' <summary>
         ''' Calls Claude to review the strategy. Returns suggestion text, or a
@@ -51,8 +65,9 @@ Namespace TopStepTrader.Services.AI
         ''' </summary>
         Public Async Function ReviewStrategyAsync(strategy As StrategyDefinition,
                                                    Optional cancel As CancellationToken = Nothing) As Task(Of String)
-            If String.IsNullOrWhiteSpace(_settings.ApiKey) Then
-                Return "⚠️  Claude API key not configured — go to Settings → Claude AI to add your key."
+            Dim apiKey = ResolveApiKey()
+            If String.IsNullOrWhiteSpace(apiKey) Then
+                Return "⚠️  Claude API key not configured — add it on the API Keys page."
             End If
 
             Dim userMessage = BuildUserMessage(strategy)
@@ -68,7 +83,7 @@ Namespace TopStepTrader.Services.AI
                 }
 
                 Using request As New HttpRequestMessage(HttpMethod.Post, AnthropicMessagesUrl)
-                    request.Headers.Add("x-api-key", _settings.ApiKey)
+                    request.Headers.Add("x-api-key", apiKey)
                     request.Headers.Add("anthropic-version", AnthropicVersion)
                     request.Content = JsonContent.Create(requestBody)
 
@@ -77,7 +92,7 @@ Namespace TopStepTrader.Services.AI
                     If Not response.IsSuccessStatusCode Then
                         Dim errorBody = Await response.Content.ReadAsStringAsync(cancel)
                         _logger.LogWarning("Claude API returned {Status}: {Body}", response.StatusCode, errorBody)
-                        Return $"⚠️  Claude API error {CInt(response.StatusCode)} — check your API key in Settings."
+                        Return $"⚠️  Claude API error {CInt(response.StatusCode)} — check your API key on the API Keys page."
                     End If
 
                     Dim result = Await response.Content.ReadFromJsonAsync(Of ClaudeResponse)(cancellationToken:=cancel)
@@ -105,8 +120,9 @@ Namespace TopStepTrader.Services.AI
         ''' </summary>
         Public Async Function ConfidenceCheckAsync(contractId As String,
                                                     Optional cancel As CancellationToken = Nothing) As Task(Of String)
-            If String.IsNullOrWhiteSpace(_settings.ApiKey) Then
-                Return "⚠️  Claude API key not configured — go to Settings → Claude AI to add your key."
+            Dim apiKey = ResolveApiKey()
+            If String.IsNullOrWhiteSpace(apiKey) Then
+                Return "⚠️  Claude API key not configured — add it on the API Keys page."
             End If
 
             Dim userMessage = $"Contract: {contractId}{Environment.NewLine}" &
@@ -123,7 +139,7 @@ Namespace TopStepTrader.Services.AI
                 }
 
                 Using request As New HttpRequestMessage(HttpMethod.Post, AnthropicMessagesUrl)
-                    request.Headers.Add("x-api-key", _settings.ApiKey)
+                    request.Headers.Add("x-api-key", apiKey)
                     request.Headers.Add("anthropic-version", AnthropicVersion)
                     request.Content = JsonContent.Create(requestBody)
 
@@ -132,7 +148,7 @@ Namespace TopStepTrader.Services.AI
                     If Not response.IsSuccessStatusCode Then
                         Dim errorBody = Await response.Content.ReadAsStringAsync(cancel)
                         _logger.LogWarning("Claude API returned {Status}: {Body}", response.StatusCode, errorBody)
-                        Return $"⚠️  Claude API error {CInt(response.StatusCode)} — check your API key in Settings."
+                        Return $"⚠️  Claude API error {CInt(response.StatusCode)} — check your API key on the API Keys page."
                     End If
 
                     Dim result = Await response.Content.ReadFromJsonAsync(Of ClaudeResponse)(cancellationToken:=cancel)
