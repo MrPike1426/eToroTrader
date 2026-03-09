@@ -39,7 +39,7 @@ Namespace TopStepTrader.Services.AI
             "typically drive this instrument, (2) best session windows (London/NY overlap etc.), " &
             "(3) any known seasonal or structural tendencies right now, and (4) your overall bias " &
             "(🟢 Long / 🔴 Short / 🟡 Neutral) with one-sentence rationale. " &
-            "Note your knowledge has a cutoff date — flag if live data is needed. " &
+            "Note your knowledge has a cutoff date — conduct live research against technical and sentiment analysis. " &
             "Keep your total response under 150 words."
 
         Public Sub New(options As IOptions(Of ClaudeSettings), apiKeyStore As IApiKeyStore, logger As ILogger(Of ClaudeReviewService))
