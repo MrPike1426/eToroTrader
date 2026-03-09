@@ -29,6 +29,20 @@ Namespace TopStepTrader.Core.Enums
         ''' Supports pyramiding scale-in up to 10 contracts.
         ''' </summary>
         TripleEmaCascade = 7
+        ''' <summary>
+        ''' Multi-Confluence Engine: Ichimoku Cloud (9/26/52) + EMA21/50 + MACD(12/26/9) +
+        ''' Stochastic RSI(14) + DMI/ADX(14). Designed for 15-minute commodity bars.
+        ''' ALL seven long conditions must align for a Long; all seven short conditions for a Short.
+        ''' SL = min(1.5×ATR, Ichimoku cloud edge); TP = 2:1 reward-to-risk.
+        ''' </summary>
+        MultiConfluence = 8
+        ''' <summary>
+        ''' LULT Divergence: WaveTrend (Market Cipher B) Anchor/Trigger momentum-price divergence.
+        ''' 6-step confirmation gate on 5-minute NQ bars.
+        ''' SL = trigger wave extreme ± ATR-scaled tick buffer; TP = 2R.
+        ''' Time-filtered to 11:00–17:00 UTC (London + NY pre-market, 07:00–13:00 EST/EDT).
+        ''' </summary>
+        LultDivergence = 9
     End Enum
 
 End Namespace

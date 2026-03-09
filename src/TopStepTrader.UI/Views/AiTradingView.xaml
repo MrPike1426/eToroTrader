@@ -96,31 +96,33 @@
                                 <ColumnDefinition Width="Auto"/>   <!-- TP / SL inputs -->
                                 <ColumnDefinition Width="16"/>     <!-- gap -->
                                 <ColumnDefinition Width="Auto"/>   <!-- "Confidence %:" label -->
-                                <ColumnDefinition Width="50"/>     <!-- Confidence input -->
+                                <ColumnDefinition Width="50"/>     <!-- Confidence threshold input -->
+                                <ColumnDefinition Width="12"/>     <!-- gap -->
+                                <ColumnDefinition Width="Auto"/>   <!-- Live confidence score -->
                             </Grid.ColumnDefinitions>
 
                             <TextBlock Grid.Column="0"
-                                       Text="Capital / Qty:" VerticalAlignment="Center"
+                                       Text="Amount $ / Lvg:" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextSecondaryBrush}"
                                        Margin="0,0,8,0"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <TextBox Text="{Binding CapitalAtRisk, UpdateSourceTrigger=PropertyChanged}"
-                                         Width="65" ToolTip="Maximum dollars to risk"/>
-                                <TextBox Text="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}"
-                                         Width="44" Margin="6,0,0,0" ToolTip="Contracts per signal"/>
+                                         Width="65" ToolTip="USD cash to invest per trade (clamped to min trade size: $1,000 / leverage for commodities)"/>
+                                <TextBox Text="{Binding Leverage, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="36" Margin="6,0,0,0" ToolTip="Leverage (1 = no leverage). Min trade cash = $1,000 ÷ leverage for OIL/GOLD/Indices."/>
                             </StackPanel>
 
                             <TextBlock Grid.Column="3"
-                                       Text="TP / SL:" VerticalAlignment="Center"
+                                       Text="TP% / SL%:" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextSecondaryBrush}"
                                        Margin="0,0,8,0"/>
                             <StackPanel Grid.Column="4" Orientation="Horizontal">
-                                <TextBox Text="{Binding TakeProfitTicks, UpdateSourceTrigger=PropertyChanged}"
-                                         Width="44" ToolTip="Take profit ticks (0 = none)"/>
+                                <TextBox Text="{Binding TakeProfitPct, UpdateSourceTrigger=LostFocus}"
+                                         Width="44" ToolTip="Take-profit % of entry price (0 = none, e.g. 1.5 = 1.5%)"/>
                                 <TextBlock Text="/" VerticalAlignment="Center" Margin="5,0,5,0"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
-                                <TextBox Text="{Binding StopLossTicks, UpdateSourceTrigger=PropertyChanged}"
-                                         Width="44" ToolTip="Stop loss ticks (0 = none)"/>
+                                <TextBox Text="{Binding StopLossPct, UpdateSourceTrigger=LostFocus}"
+                                         Width="44" ToolTip="Stop-loss % of entry price (0 = none, e.g. 0.75 = 0.75%)"/>
                             </StackPanel>
 
                             <TextBlock Grid.Column="6"
@@ -131,9 +133,71 @@
                             <TextBox Grid.Column="7"
                                      Text="{Binding MinConfidencePct, UpdateSourceTrigger=PropertyChanged}"
                                      ToolTip="Default 75 — engine fires Long when UP ≥ this %, Short when DOWN ≥ this %"/>
+
+                            <!-- Live EMA/RSI confidence score — updates every 30 seconds -->
+                            <TextBlock Grid.Column="9"
+                                       Text="{Binding LiveConfidenceText}"
+                                       Foreground="{Binding LiveConfidenceColor}"
+                                       FontFamily="Segoe UI"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       ToolTip="Live EMA/RSI signal score — dominant direction and strength, updated every 30 seconds"/>
                         </Grid>
 
                     </StackPanel>
+                </Border>
+
+                <!-- ── Scale-In Configuration ──────────────────────────────── -->
+                <Border Background="{StaticResource SurfaceBrush}"
+                        CornerRadius="6" Padding="20,12" Margin="0,8,0,0"
+                        BorderBrush="#FF4A9FFF" BorderThickness="1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>  <!-- section label -->
+                            <ColumnDefinition Width="20"/>    <!-- gap -->
+                            <ColumnDefinition Width="Auto"/>  <!-- "Amount $:" label -->
+                            <ColumnDefinition Width="70"/>    <!-- amount input -->
+                            <ColumnDefinition Width="12"/>    <!-- gap -->
+                            <ColumnDefinition Width="Auto"/>  <!-- "Lvg:" label -->
+                            <ColumnDefinition Width="40"/>    <!-- leverage input -->
+                            <ColumnDefinition Width="*"/>     <!-- description text -->
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="SCALE-IN"
+                                   Style="{StaticResource SectionHeadingStyle}"
+                                   VerticalAlignment="Center" Margin="0"/>
+
+                        <TextBlock Grid.Column="2"
+                                   Text="Amount $:"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="3"
+                                 Text="{Binding ScaleInAmount, UpdateSourceTrigger=PropertyChanged}"
+                                 VerticalAlignment="Center"
+                                 ToolTip="Cash amount per scale-in trade (default $200). Max 3 scale-ins after initial entry, each requiring 3 consecutive extreme-confidence new bars."/>
+
+                        <TextBlock Grid.Column="5"
+                                   Text="Lvg:"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Margin="0,0,6,0"
+                                   ToolTip="Leverage multiplier for scale-in trades (default 5)"/>
+                        <TextBox Grid.Column="6"
+                                 Text="{Binding ScaleInLeverage, UpdateSourceTrigger=PropertyChanged}"
+                                 VerticalAlignment="Center"
+                                 ToolTip="Leverage applied to each scale-in order (default 5). Min trade cash = $1,000 ÷ leverage."/>
+
+                        <TextBlock Grid.Column="7"
+                                   Text="per trade · fires after 3 consecutive extreme-confidence new bars · max 3 additional trades"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="10" FontStyle="Italic"
+                                   VerticalAlignment="Center"
+                                   Margin="12,0,0,0"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </Grid>
                 </Border>
 
                 <!-- ── Panel 2: Strategy Selection (1 active + 3 In Dev) ── -->
@@ -181,33 +245,39 @@
                                 </StackPanel>
                             </Button>
 
-                            <!-- 2. In Dev -->
-                            <Button IsEnabled="False"
+                            <!-- 2. Multi-Confluence Engine -->
+                            <Button Command="{Binding SelectMultiConfluenceEngineCommand}"
                                     Style="{StaticResource StrategyCardStyle}"
                                     Margin="0,0,6,0"
-                                    ToolTip="Coming soon">
+                                    ToolTip="All 7 conditions must align: Ichimoku Cloud, EMA21, Tenkan/Kijun, Lagging Span, ADX &gt; 25 + DI, MACD histogram, StochRSI gate. SL = min(1.5×ATR, cloud edge); TP = 2:1 R:R. 15-min commodity bars.">
                                 <StackPanel>
-                                    <TextBlock Text="⚙  Strategy 2"
+                                    <TextBlock Text="☁  Multi-Confluence"
                                                FontWeight="SemiBold" FontSize="12"
-                                               Foreground="{StaticResource TextSecondaryBrush}"/>
-                                    <TextBlock Text="In Development"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="Ichimoku · EMA · MACD · StochRSI · ADX"
                                                FontSize="10" Margin="0,2,0,0"
                                                Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <TextBlock Text="15-min bars · ATR dynamic SL/TP"
+                                               FontSize="9" Margin="0,1,0,0"
+                                               Foreground="{StaticResource AccentBrush}"/>
                                 </StackPanel>
                             </Button>
 
-                            <!-- 3. In Dev -->
-                            <Button IsEnabled="False"
+                            <!-- 3. LULT Divergence -->
+                            <Button Command="{Binding SelectLultDivergenceCommand}"
                                     Style="{StaticResource StrategyCardStyle}"
                                     Margin="0,0,6,0"
-                                    ToolTip="Coming soon">
+                                    ToolTip="6-step momentum divergence (Market Cipher B): Anchor wave (WT ≷ ±60) → Trigger wave (shallower — reset if deeper) → price divergence → Green/Red Dot (WT1×WT2 cross) → engulfing candle. NQ 5-min bars · 07:00–11:00 EST · SL at trigger extreme · TP = 2R.">
                                 <StackPanel>
-                                    <TextBlock Text="⚙  Strategy 3"
+                                    <TextBlock Text="🌊  LULT Divergence"
                                                FontWeight="SemiBold" FontSize="12"
-                                               Foreground="{StaticResource TextSecondaryBrush}"/>
-                                    <TextBlock Text="In Development"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="WaveTrend · Anchor/Trigger · Divergence"
                                                FontSize="10" Margin="0,2,0,0"
                                                Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <TextBlock Text="5-min NQ bars · 2R · EST time filter"
+                                               FontSize="9" Margin="0,1,0,0"
+                                               Foreground="{StaticResource AccentBrush}"/>
                                 </StackPanel>
                             </Button>
 
@@ -272,7 +342,7 @@
                                  IsReadOnly="True"
                                  AcceptsReturn="True" TextWrapping="Wrap"
                                  MaxHeight="120" VerticalScrollBarVisibility="Auto"
-                                 FontSize="11" Margin="0,0,0,10"
+                                 FontSize="14" Margin="0,0,0,10"
                                  Background="{StaticResource CardBrush}"
                                  BorderThickness="0"
                                  Foreground="{StaticResource TextPrimaryBrush}"
@@ -289,38 +359,70 @@
                                       CanUserSortColumns="False"
                                       CanUserResizeRows="False"
                                       HeadersVisibility="Column"
-                                      GridLinesVisibility="None"
+                                      GridLinesVisibility="All"
+                                      HorizontalGridLinesBrush="{StaticResource BorderBrush}"
+                                      VerticalGridLinesBrush="{StaticResource BorderBrush}"
                                       MaxHeight="173"
-                                      Background="Transparent"
+                                      Background="{StaticResource CardBrush}"
                                       RowBackground="Transparent"
                                       AlternatingRowBackground="#0AFFFFFF"
-                                      BorderThickness="0"
-                                      FontFamily="Consolas" FontSize="10"
+                                      BorderThickness="1"
+                                      BorderBrush="{StaticResource BorderBrush}"
+                                      FontFamily="Consolas" FontSize="11"
                                       Foreground="{StaticResource TextPrimaryBrush}">
                                 <DataGrid.ColumnHeaderStyle>
                                     <Style TargetType="DataGridColumnHeader">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-                                        <Setter Property="FontSize" Value="9"/>
-                                        <Setter Property="Padding" Value="4,3"/>
-                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Background"      Value="{StaticResource SidebarBrush}"/>
+                                        <Setter Property="Foreground"      Value="{StaticResource TextSecondaryBrush}"/>
+                                        <Setter Property="FontSize"        Value="11"/>
+                                        <Setter Property="FontWeight"      Value="Bold"/>
+                                        <Setter Property="Padding"         Value="4,5"/>
+                                        <Setter Property="BorderBrush"     Value="{StaticResource BorderBrush}"/>
+                                        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                        <Setter Property="SeparatorBrush"  Value="{StaticResource BorderBrush}"/>
                                     </Style>
                                 </DataGrid.ColumnHeaderStyle>
                                 <DataGrid.CellStyle>
                                     <Style TargetType="DataGridCell">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="BorderThickness" Value="0"/>
-                                        <Setter Property="Padding" Value="4,2"/>
-                                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                        <Setter Property="Background"        Value="Transparent"/>
+                                        <Setter Property="BorderThickness"   Value="0"/>
+                                        <Setter Property="Padding"           Value="4,2"/>
+                                        <Setter Property="Foreground"        Value="{StaticResource TextPrimaryBrush}"/>
+                                        <Setter Property="FontSize"          Value="11"/>
                                         <Setter Property="VerticalAlignment" Value="Center"/>
                                     </Style>
                                 </DataGrid.CellStyle>
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Date / Time" Binding="{Binding EntryTimeDisplay}" Width="80"/>
-                                    <DataGridTextColumn Header="Contract" Binding="{Binding ContractDisplay}" Width="70"/>
-                                    <DataGridTextColumn Header="Conf %" Binding="{Binding ConfidencePct, StringFormat={}{0}%}" Width="50"/>
-                                    <DataGridTextColumn Header="Side" Binding="{Binding SideDisplay}" Width="40"/>
+                                    <DataGridTextColumn Header="Date" Binding="{Binding EntryTimeDisplay}" Width="80"/>
+                                    <DataGridTextColumn Header="Contract" Binding="{Binding ContractDisplay}" Width="80"/>
+                                    <DataGridTextColumn Header="Conf %" Binding="{Binding ConfidencePct, StringFormat={}{0}%}" Width="80">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Side" Binding="{Binding SideDisplay}" Width="50"/>
                                     <DataGridTextColumn Header="TX Order" Binding="{Binding TradeIdDisplay}" Width="90"/>
+                                    <DataGridTextColumn Header="eToro ID" Binding="{Binding EtoroPositionIdDisplay}" Width="85"/>
+                                    <DataGridTextColumn Header="Opened" Binding="{Binding OpenedAtDisplay}" Width="80"/>
+                                    <DataGridTextColumn Header="Exposure" Binding="{Binding ExposureDisplay}" Width="80">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTemplateColumn Header="P&amp;L" Width="80">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding PnlDisplay}"
+                                                           Foreground="{Binding PnlForeground}"
+                                                           HorizontalAlignment="Left"
+                                                           VerticalAlignment="Center"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Result" Width="*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
@@ -381,18 +483,28 @@
                                  SelectionMode="Single">
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem">
-                                    <Setter Property="Padding" Value="0,1"/>
-                                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Padding"                   Value="0,1"/>
+                                    <Setter Property="Foreground"                Value="{StaticResource AccentBrush}"/>
+                                    <Setter Property="Background"                Value="Transparent"/>
+                                    <Setter Property="BorderThickness"           Value="0"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="FocusVisualStyle"          Value="{x:Null}"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                        </Trigger>
+                                    </Style.Triggers>
                                 </Style>
                             </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding}"
                                                TextWrapping="Wrap"
-                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               Foreground="{StaticResource AccentBrush}"
                                                FontFamily="Consolas" FontSize="10"/>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>

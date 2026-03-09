@@ -15,7 +15,11 @@ Namespace TopStepTrader.Core.Trading
                 New FavouriteContract("UK100",   "UK100 Index (Non Expiry)",     30, 0.01D, 0.01D, 1D),
                 New FavouriteContract("NSDQ100", "NASDAQ100 Index (Non Expiry)", 28, 0.01D, 0.01D, 1D),
                 New FavouriteContract("SPX500",  "SPX500 Index (Non Expiry)",    27, 0.01D, 0.01D, 1D),
-                New FavouriteContract("BTC",     "Bitcoin",                   100000, 1.0D,  1.0D,  1D)
+                New FavouriteContract("BTC",     "Bitcoin",                   100000, 1.0D,  1.0D,  1D),
+                New FavouriteContract("ETH",     "Ethereum",                  100001, 0.1D,  0.1D,  1D),
+                New FavouriteContract("XRP",     "Ripple",                    100003, 0.0001D, 0.0001D, 1D),
+                New FavouriteContract("SOL",     "Solana",                    100063, 0.01D, 0.01D, 1D),
+                New FavouriteContract("BNB",     "BNB",                       100030, 0.1D,  0.1D,  1D)
             }
         End Function
 
@@ -39,15 +43,26 @@ Namespace TopStepTrader.Core.Trading
         Public Property TickSize As Decimal
         Public Property TickValue As Decimal
         Public Property PointValue As Decimal
+        ''' <summary>
+        ''' eToro minimum trade notional in USD (position size including leverage).
+        ''' Commodities, currencies and indices = $1,000.  BTC = $25 on eToro demo.
+        ''' </summary>
+        Public Property MinNotionalUsd As Decimal
+        ''' <summary>Default leverage multiplier for this instrument (1 = no leverage).</summary>
+        Public Property DefaultLeverage As Integer
 
         Public Sub New(id As String, name As String, instrumentId As Integer,
-                       tickSz As Decimal, tickVal As Decimal, ptVal As Decimal)
+                       tickSz As Decimal, tickVal As Decimal, ptVal As Decimal,
+                       Optional minNotional As Decimal = 1000D,
+                       Optional defaultLeverage As Integer = 1)
             ContractId = id
             Me.Name = name
             Me.InstrumentId = instrumentId
             TickSize = tickSz
             TickValue = tickVal
             PointValue = ptVal
+            MinNotionalUsd = minNotional
+            Me.DefaultLeverage = defaultLeverage
         End Sub
     End Class
 

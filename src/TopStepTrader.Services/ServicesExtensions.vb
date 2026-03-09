@@ -51,6 +51,9 @@ Namespace TopStepTrader.Services
             ' ── AI-Assisted Trading
             services.AddScoped(Of StrategyParserService)()
             services.AddTransient(Of StrategyExecutionEngine)()
+            ' CryptoJoe-specific engine: BUY-only + 100% confidence override.
+            ' Wired exclusively through CryptoJoeViewModel — other pages remain on StrategyExecutionEngine.
+            services.AddTransient(Of CryptoStrategyExecutionEngine)()
             services.AddScoped(Of ClaudeReviewService)()
 
             ' ── Backtest

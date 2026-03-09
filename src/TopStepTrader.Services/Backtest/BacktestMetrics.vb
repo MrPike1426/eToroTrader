@@ -89,8 +89,23 @@ Namespace TopStepTrader.Services.Backtest
                 Dim tpDelta = config.TakeProfitTicks * config.TickSize
                 Return If(isBuy, trade.EntryPrice + tpDelta, trade.EntryPrice - tpDelta)
             Else
-                Return bar.Close   ' EndOfData or unknown reason — exit at the bar's close price
+                Return bar.Close   ' EndOfData, NeutralExit, or unknown reason — exit at bar close
             End If
+        End Function
+
+        ''' <summary>
+        ''' Annualised Sharpe ratio computed from a list of per-position P&amp;L values.
+        ''' Returns Nothing when fewer than 2 positions exist or all returns are identical.
+        ''' Formula: (avg / stddev) × √252
+        ''' </summary>
+        Friend Function CalculateSharpeFromReturns(returns As List(Of Decimal)) As Single?
+            If returns.Count < 2 Then Return Nothing
+            Dim dblReturns = returns.Select(Function(r) CDbl(r)).ToList()
+            Dim avg = dblReturns.Average()
+            Dim variance = dblReturns.Select(Function(r) (r - avg) * (r - avg)).Average()
+            Dim stddev = Math.Sqrt(variance)
+            If stddev = 0 Then Return Nothing
+            Return CSng(avg / stddev * Math.Sqrt(252))
         End Function
 
         ''' <summary>
@@ -111,15 +126,32 @@ Namespace TopStepTrader.Services.Backtest
 
         ''' <summary>
         ''' Aggregate a completed list of trades and run metadata into a <see cref="BacktestResult"/>.
+        '''
+        ''' Metrics are computed at the POSITION level (grouped by PositionGroupId) so that
+        ''' scale-in entries do not inflate the trade count or distort win rate.
+        '''   TotalTrades   = number of unique positions (groups), not individual entry rows.
+        '''   WinRate       = winning positions / total positions.
+        '''   AveragePnL    = total P&amp;L / total positions.
+        '''   SharpeRatio   = annualised Sharpe using per-position aggregated returns.
+        '''   Trades        = all individual rows (including scale-ins) for display purposes.
+        '''
         ''' Win rate is 0 when no trades were taken; Sharpe is Nothing when undefined.
         ''' </summary>
         Friend Function BuildResult(config As BacktestConfiguration,
                                      trades As List(Of BacktestTrade),
                                      finalCapital As Decimal,
                                      maxDrawdown As Decimal) As BacktestResult
-            Dim winners = trades.Where(Function(t) t.PnL.GetValueOrDefault() > 0).ToList()
-            Dim losers = trades.Where(Function(t) t.PnL.GetValueOrDefault() <= 0).ToList()
             Dim totalPnL = trades.Sum(Function(t) t.PnL.GetValueOrDefault())
+
+            ' Group individual entry/scale-in rows by position for exposure-correct metrics.
+            Dim positionPnLs = trades _
+                .GroupBy(Function(t) t.PositionGroupId) _
+                .Select(Function(g) g.Sum(Function(t) t.PnL.GetValueOrDefault())) _
+                .ToList()
+
+            Dim totalPositions = positionPnLs.Count
+            Dim winningPositions = positionPnLs.Where(Function(p) p > 0).Count()
+            Dim losingPositions = positionPnLs.Where(Function(p) p <= 0).Count()
 
             Return New BacktestResult With {
                 .RunName = config.RunName,
@@ -128,14 +160,14 @@ Namespace TopStepTrader.Services.Backtest
                 .EndDate = config.EndDate,
                 .InitialCapital = config.InitialCapital,
                 .FinalCapital = finalCapital,
-                .TotalTrades = trades.Count,
-                .WinningTrades = winners.Count,
-                .LosingTrades = losers.Count,
+                .TotalTrades = totalPositions,
+                .WinningTrades = winningPositions,
+                .LosingTrades = losingPositions,
                 .TotalPnL = totalPnL,
                 .MaxDrawdown = maxDrawdown,
-                .WinRate = If(trades.Count > 0, CSng(winners.Count) / trades.Count, 0F),
-                .AveragePnLPerTrade = If(trades.Count > 0, totalPnL / trades.Count, 0D),
-                .SharpeRatio = CalculateSharpe(trades),
+                .WinRate = If(totalPositions > 0, CSng(winningPositions) / totalPositions, 0F),
+                .AveragePnLPerTrade = If(totalPositions > 0, totalPnL / totalPositions, 0D),
+                .SharpeRatio = CalculateSharpeFromReturns(positionPnLs),
                 .Trades = trades
             }
         End Function

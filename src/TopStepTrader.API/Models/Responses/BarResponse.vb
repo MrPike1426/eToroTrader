@@ -46,8 +46,9 @@ Namespace TopStepTrader.API.Models.Responses
         <JsonPropertyName("close")>
         Public Property Close As Double
 
+        ''' <summary>eToro returns null for volume on some instruments — use nullable.</summary>
         <JsonPropertyName("volume")>
-        Public Property Volume As Double
+        Public Property Volume As Double?
     End Class
 
     ' ── Legacy alias so BarIngestionService compiles with minimal changes ──

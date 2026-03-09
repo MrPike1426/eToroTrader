@@ -21,15 +21,15 @@ Namespace TopStepTrader.UI.Controls
         ' â”€â”€ Inner display type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         Public Class InstrumentItem
             Public Property InstrumentId As Integer
-            Public Property Symbol       As String = String.Empty
-            Public Property DisplayName  As String = String.Empty
-            Public Property IsFavourite  As Boolean
-            Public Property IsHeader     As Boolean
+            Public Property Symbol As String = String.Empty
+            Public Property DisplayName As String = String.Empty
+            Public Property IsFavourite As Boolean
+            Public Property IsHeader As Boolean
 
             Public ReadOnly Property Display As String
                 Get
-                    If IsHeader     Then Return DisplayName
-                    If IsFavourite  Then Return $"â­  {DisplayName}"
+                    If IsHeader Then Return DisplayName
+                    If IsFavourite Then Return $"★  {DisplayName}"
                     Return $"     {DisplayName}"
                 End Get
             End Property
@@ -44,12 +44,12 @@ Namespace TopStepTrader.UI.Controls
             FavouriteContracts.GetDefaults() _
                 .Select(Function(f) New InstrumentItem With {
                     .InstrumentId = f.InstrumentId,
-                    .Symbol       = f.ContractId,
-                    .DisplayName  = f.Name,
-                    .IsFavourite  = True
+                    .Symbol = f.ContractId,
+                    .DisplayName = f.Name,
+                    .IsFavourite = True
                 }).ToList()
 
-                Private Shared ReadOnly _headerFavourites As New InstrumentItem With {
+        Private Shared ReadOnly _headerFavourites As New InstrumentItem With {
             .IsHeader = True, .DisplayName = "-- Favourites ------------------"}
         Private Shared ReadOnly _headerResults As New InstrumentItem With {
             .IsHeader = True, .DisplayName = "-- Search Results ---------------"}
@@ -156,15 +156,15 @@ Namespace TopStepTrader.UI.Controls
                     ?.Where(Function(i) Not String.IsNullOrEmpty(i.InternalSymbolFull)) _
                     .Select(Function(i) New InstrumentItem With {
                         .InstrumentId = i.InstrumentId,
-                        .Symbol       = i.InternalSymbolFull,
-                        .DisplayName  = If(Not String.IsNullOrEmpty(i.DisplayName), i.DisplayName, i.InternalSymbolFull),
-                        .IsFavourite  = False
+                        .Symbol = i.InternalSymbolFull,
+                        .DisplayName = If(Not String.IsNullOrEmpty(i.DisplayName), i.DisplayName, i.InternalSymbolFull),
+                        .IsFavourite = False
                     }).Take(15).ToList()
 
                 Dispatcher.Invoke(Sub()
-                    RebuildList(If(results IsNot Nothing AndAlso results.Count > 0, results, Nothing))
-                    ContractComboBox.IsDropDownOpen = True
-                End Sub)
+                                      RebuildList(If(results IsNot Nothing AndAlso results.Count > 0, results, Nothing))
+                                      ContractComboBox.IsDropDownOpen = True
+                                  End Sub)
             Catch
                 ' Search error â€” silently keep current list
             End Try
@@ -200,6 +200,8 @@ Namespace TopStepTrader.UI.Controls
                 Try
                     ContractComboBox.SelectedItem = match
                     ContractComboBox.Text = match.ToString()
+                    _searchTimer.Stop()
+                    _lastSearchText = match.ToString()
                 Finally
                     _isUpdating = False
                 End Try
@@ -212,8 +214,14 @@ Namespace TopStepTrader.UI.Controls
                 ContractComboBox.SelectedItem = item
                 ContractComboBox.Text = item.ToString()
                 ContractComboBox.IsDropDownOpen = False
-                ContractId   = item.Symbol
+                ContractId = item.Symbol
                 InstrumentId = item.InstrumentId
+                ' Stop the search timer and anchor _lastSearchText to the display text.
+                ' WPF fires a deferred TextChanged after SelectedItem is set; without this
+                ' the timer fires, treats the display text as a search query, finds nothing,
+                ' calls RebuildList and blanks the combobox.
+                _searchTimer.Stop()
+                _lastSearchText = item.ToString()
             Finally
                 _isUpdating = False
             End Try

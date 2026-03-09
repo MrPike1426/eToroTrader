@@ -9,7 +9,7 @@
     <Color x:Key="BorderColor">#FF2E3F6E</Color>
 
     <!-- ═══ Accent / action colours ═══ -->
-    <Color x:Key="AccentColor">#FF00D4AA</Color>
+    <Color x:Key="AccentColor">#FF27AE60</Color>
     <Color x:Key="BuyColor">#FF00C851</Color>
     <Color x:Key="SellColor">#FFFF4444</Color>
     <Color x:Key="WarningColor">#FFFFBB00</Color>
@@ -39,7 +39,7 @@
 
     <!-- Nav button hover/selected overlays -->
     <Color x:Key="NavHoverColor">#22FFFFFF</Color>
-    <Color x:Key="NavSelectedColor">#3300D4AA</Color>
+    <Color x:Key="NavSelectedColor">#3327AE60</Color>
     <SolidColorBrush x:Key="NavHoverBrush"    Color="{StaticResource NavHoverColor}"/>
     <SolidColorBrush x:Key="NavSelectedBrush" Color="{StaticResource NavSelectedColor}"/>
     <SolidColorBrush x:Key="TransparentBrush" Color="Transparent"/>

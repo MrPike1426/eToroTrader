@@ -1,6 +1,7 @@
 Imports System.Collections.ObjectModel
 Imports System.Threading
 Imports System.Windows
+Imports System.Windows.Media
 Imports Microsoft.Extensions.Options
 Imports TopStepTrader.API.Http
 Imports TopStepTrader.API.Models.Responses
@@ -173,7 +174,7 @@ Namespace TopStepTrader.UI.ViewModels
         End Property
 
         ' ── Risk / quantity ───────────────────────────────────────────────────────
-        Private _capitalAtRisk As Decimal = 500D
+        Private _capitalAtRisk As Decimal = 200D
         Public Property CapitalAtRisk As Decimal
             Get
                 Return _capitalAtRisk
@@ -281,37 +282,51 @@ Namespace TopStepTrader.UI.ViewModels
         End Property
 
         ' ── Exit strategy ─────────────────────────────────────────────────────────
-        Private _takeProfitTicks As Integer = 40
-        Public Property TakeProfitTicks As Integer
+        Private _takeProfitPct As Decimal = 4.0D
+        ''' <summary>Take-profit as % of entry price. 0 = no TP order. Default 4%.</summary>
+        Public Property TakeProfitPct As Decimal
             Get
-                Return _takeProfitTicks
+                Return _takeProfitPct
             End Get
-            Set(value As Integer)
-                If SetProperty(_takeProfitTicks, value) Then
+            Set(value As Decimal)
+                If SetProperty(_takeProfitPct, Math.Max(0D, value)) Then
                     NotifyPropertyChanged(NameOf(IsFormReady))
                     RelayCommand.RaiseCanExecuteChanged()
                 End If
             End Set
         End Property
 
-        Private _stopLossTicks As Integer = 20
-        Public Property StopLossTicks As Integer
+        Private _stopLossPct As Decimal = 1.5D
+        ''' <summary>Stop-loss as % of entry price. 0 = no SL order. Default 1.5%.</summary>
+        Public Property StopLossPct As Decimal
             Get
-                Return _stopLossTicks
+                Return _stopLossPct
             End Get
-            Set(value As Integer)
-                If SetProperty(_stopLossTicks, value) Then
+            Set(value As Decimal)
+                If SetProperty(_stopLossPct, Math.Max(0D, value)) Then
                     NotifyPropertyChanged(NameOf(IsFormReady))
                     RelayCommand.RaiseCanExecuteChanged()
                 End If
             End Set
         End Property
 
-        Private _minConfidencePct As Integer = 75
+        Private _leverage As Integer = 5
+        ''' <summary>Leverage multiplier for eToro orders. Default 5.
+        ''' Min trade cash = MinNotionalUsd / leverage.</summary>
+        Public Property Leverage As Integer
+            Get
+                Return _leverage
+            End Get
+            Set(value As Integer)
+                SetProperty(_leverage, Math.Max(1, value))
+            End Set
+        End Property
+
+        Private _minConfidencePct As Integer = 85
         ''' <summary>
         ''' Minimum signal confidence (0–100) required to fire a trade.
         ''' Passed to StrategyDefinition.MinConfidencePct before the engine starts.
-        ''' Default 75 — only fire when the weighted EMA/RSI score is ≥ 75%.
+        ''' Default 85 — only fire when the weighted EMA/RSI score is ≥ 85%.
         ''' </summary>
         Public Property MinConfidencePct As Integer
             Get
@@ -319,6 +334,28 @@ Namespace TopStepTrader.UI.ViewModels
             End Get
             Set(value As Integer)
                 SetProperty(_minConfidencePct, Math.Max(0, Math.Min(100, value)))
+            End Set
+        End Property
+
+        Private _scaleInAmount As Decimal = 200D
+        ''' <summary>Cash amount per scale-in trade. Default $200. Passed to the engine on Start.</summary>
+        Public Property ScaleInAmount As Decimal
+            Get
+                Return _scaleInAmount
+            End Get
+            Set(value As Decimal)
+                SetProperty(_scaleInAmount, Math.Max(1D, value))
+            End Set
+        End Property
+
+        Private _scaleInLeverage As Integer = 5
+        ''' <summary>Leverage multiplier for scale-in trades. Default 5. Passed to the engine on Start.</summary>
+        Public Property ScaleInLeverage As Integer
+            Get
+                Return _scaleInLeverage
+            End Get
+            Set(value As Integer)
+                SetProperty(_scaleInLeverage, Math.Max(1, value))
             End Set
         End Property
 
@@ -353,6 +390,8 @@ Namespace TopStepTrader.UI.ViewModels
                 SetProperty(_isRunning, value)
                 OnPropertyChanged(NameOf(IsNotRunning))
                 OnPropertyChanged(NameOf(StrategyDescriptionPanelVisible))
+                OnPropertyChanged(NameOf(LiveConfidenceText))
+                OnPropertyChanged(NameOf(LiveConfidenceColor))
                 RelayCommand.RaiseCanExecuteChanged()
             End Set
         End Property
@@ -360,6 +399,90 @@ Namespace TopStepTrader.UI.ViewModels
         Public ReadOnly Property IsNotRunning As Boolean
             Get
                 Return Not _isRunning
+            End Get
+        End Property
+
+        ' ── Live confidence telemetry ─────────────────────────────────────────────
+        ' Updated every 30 seconds by the ConfidenceUpdated engine event.
+        ' Displays the dominant EMA/RSI score with directional indicator and colour.
+        ' When the ADX gate suppresses the signal, shows amber "⊘ N%" instead of
+        ' a green arrow so the user knows the raw score is high but no trade will fire.
+
+        Private _liveConfidencePct As Integer = 0
+        Public Property LiveConfidencePct As Integer
+            Get
+                Return _liveConfidencePct
+            End Get
+            Set(value As Integer)
+                If SetProperty(_liveConfidencePct, value) Then
+                    NotifyPropertyChanged(NameOf(LiveConfidenceText))
+                    NotifyPropertyChanged(NameOf(LiveConfidenceColor))
+                End If
+            End Set
+        End Property
+
+        Private _liveConfidenceDirection As String = String.Empty
+        Public Property LiveConfidenceDirection As String
+            Get
+                Return _liveConfidenceDirection
+            End Get
+            Set(value As String)
+                SetProperty(_liveConfidenceDirection, value)
+            End Set
+        End Property
+
+        ''' <summary>True when the last bar check passed the ADX ≥ 25 trend-strength gate.</summary>
+        Private _adxGatePassed As Boolean = True
+        Public Property AdxGatePassed As Boolean
+            Get
+                Return _adxGatePassed
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_adxGatePassed, value) Then
+                    NotifyPropertyChanged(NameOf(LiveConfidenceText))
+                    NotifyPropertyChanged(NameOf(LiveConfidenceColor))
+                End If
+            End Set
+        End Property
+
+        ''' <summary>
+        ''' Formatted live score for the UI:
+        '''   "↑ 82%"   — ADX gate passed, bullish
+        '''   "↓ 31%"   — ADX gate passed, bearish
+        '''   "⊘ 100%"  — ADX gate suppressed (ranging market; raw score shown for information)
+        '''   "—"       — engine idle or no score yet
+        ''' </summary>
+        Public ReadOnly Property LiveConfidenceText As String
+            Get
+                If Not _isRunning OrElse _liveConfidencePct = 0 Then Return "—"
+                If Not _adxGatePassed Then Return $"⊘ {_liveConfidencePct}%"
+                Dim arrow = If(_liveConfidenceDirection = "UP", "↑", "↓")
+                Return $"{arrow} {_liveConfidencePct}%"
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' Colour rules:
+        '''   ADX suppressed        → amber  (#FF9500) — signal gated, market ranging
+        '''   ADX passed, ≤ 25%     → red    (#E5533A)
+        '''   ADX passed, ≥ 85%     → green  (#27AE60)
+        '''   ADX passed, otherwise → TextSecondaryColor (#FF8080A0)
+        ''' </summary>
+        Public ReadOnly Property LiveConfidenceColor As SolidColorBrush
+            Get
+                If Not _isRunning OrElse _liveConfidencePct = 0 Then
+                    Return New SolidColorBrush(Color.FromArgb(&HFF, &H80, &H80, &HA0))
+                End If
+                If Not _adxGatePassed Then
+                    Return New SolidColorBrush(Color.FromRgb(&HFF, &H95, &H00))  ' amber = suppressed
+                End If
+                If _liveConfidencePct <= 25 Then
+                    Return New SolidColorBrush(Color.FromRgb(&HE5, &H53, &H3A))
+                End If
+                If _liveConfidencePct >= 85 Then
+                    Return New SolidColorBrush(Color.FromRgb(&H27, &HAE, &H60))
+                End If
+                Return New SolidColorBrush(Color.FromArgb(&HFF, &H80, &H80, &HA0))
             End Get
         End Property
 
@@ -371,9 +494,7 @@ Namespace TopStepTrader.UI.ViewModels
             Get
                 Return _selectedAccount IsNot Nothing AndAlso
                        Not String.IsNullOrWhiteSpace(_selectedContractId) AndAlso
-                       _quantity > 0 AndAlso
-                       _takeProfitTicks > 0 AndAlso
-                       _stopLossTicks > 0
+                       _capitalAtRisk > 0
             End Get
         End Property
 
@@ -465,6 +586,8 @@ Namespace TopStepTrader.UI.ViewModels
         ' ── Commands ──────────────────────────────────────────────────────────────
         ' Active strategy button — one-click activate (no parse step required)
         Public ReadOnly Property SelectEmaRsiCombinedCommand As RelayCommand
+        Public ReadOnly Property SelectMultiConfluenceEngineCommand As RelayCommand
+        Public ReadOnly Property SelectLultDivergenceCommand As RelayCommand
 
         ' Preserved for future move to Backtest page
         Public ReadOnly Property ParseCommand As RelayCommand
@@ -494,6 +617,9 @@ Namespace TopStepTrader.UI.ViewModels
             AddHandler _engine.ExecutionStopped, AddressOf OnEngineStopped
             AddHandler _engine.TradeOpened, AddressOf OnTradeOpened
             AddHandler _engine.TradeClosed, AddressOf OnTradeClosed
+            AddHandler _engine.BarPriceUpdated, AddressOf OnBarPriceUpdated
+            AddHandler _engine.PositionSynced, AddressOf OnPositionSynced
+            AddHandler _engine.ConfidenceUpdated, AddressOf OnConfidenceUpdated
 
             ' Notify HasTradeRows/HasNoResults when the collection changes
             AddHandler TradeRows.CollectionChanged, Sub(s, e)
@@ -503,6 +629,10 @@ Namespace TopStepTrader.UI.ViewModels
 
             ' Strategy selection — one-click activate, no parse step required
             SelectEmaRsiCombinedCommand = New RelayCommand(Sub(p) ApplyEmaRsiCombined(),
+                                                            Function(p) IsFormReady AndAlso IsNotRunning)
+            SelectMultiConfluenceEngineCommand = New RelayCommand(Sub(p) ApplyMultiConfluenceEngine(),
+                                                                   Function(p) IsFormReady AndAlso IsNotRunning)
+            SelectLultDivergenceCommand = New RelayCommand(Sub(p) ApplyLultDivergence(),
                                                             Function(p) IsFormReady AndAlso IsNotRunning)
 
             ' Preserved for future move to Backtest page
@@ -597,8 +727,9 @@ Namespace TopStepTrader.UI.ViewModels
                 .RawDescription = t.RawDescription,
                 .CapitalAtRisk = _capitalAtRisk,
                 .Quantity = _quantity,
-                .TakeProfitTicks = _takeProfitTicks,
-                .StopLossTicks = _stopLossTicks
+                .TakeProfitPct = _takeProfitPct,
+                .StopLossPct = _stopLossPct,
+                .Leverage = _leverage
             }
 
             _currentStrategy = sd
@@ -635,33 +766,38 @@ Namespace TopStepTrader.UI.ViewModels
                 "Timeframe: 5-minute bars. Entry: UP ≥ confidence% → Long, DOWN ≥ confidence% → Short."
 
             ' ── Apply strategy-recommended defaults ───────────────────────────────
-            ' These are optimal settings for EMA/RSI Combined on micro-futures at 5-min bars.
+            ' 4% TP / 1.5% SL gives a 2.67:1 risk–reward ratio.
             ' Set via property setters so UI TextBoxes update through normal data binding.
-            TakeProfitTicks = 40    ' ~2× average 5-min ATR on micro-futures; achievable without over-reaching
-            StopLossTicks = 20    ' 1:2 risk/reward ratio; protects capital without premature exit
-            Quantity = 1     ' Conservative default; user can increase after reviewing results
+            TakeProfitPct = 4.0D    ' 4% above entry — targets a meaningful intraday momentum move
+            StopLossPct = 1.5D     ' 1.5% below entry — tight enough to limit loss on failure
+            Leverage = 5           ' 5× leverage matches the scale-in default
+            Quantity = 1           ' Kept for reference; by-amount uses CapitalAtRisk
 
             Dim sd As New StrategyDefinition With {
                 .Name = "EMA/RSI Combined",
                 .Indicator = Core.Enums.StrategyIndicatorType.EmaRsiCombined,
                 .Condition = Core.Enums.StrategyConditionType.EmaRsiWeightedScore,
-                .IndicatorPeriod = 50,    ' larger EMA period — drives min-bar guard in engine
+                .IndicatorPeriod = 50,
                 .SecondaryPeriod = 0,
                 .IndicatorMultiplier = 0,
                 .GoLongWhenBelowBands = True,
                 .GoShortWhenAboveBands = True,
-                .TimeframeMinutes = 5,     ' optimal for micro-futures intraday
-                .DurationHours = 8,     ' covers London+NY sessions
+                .TimeframeMinutes = 5,
+                .DurationHours = 8,
                 .RawDescription = Description,
                 .CapitalAtRisk = _capitalAtRisk,
-                .Quantity = _quantity,      ' now = 1 (recommended)
-                .TakeProfitTicks = _takeProfitTicks,  ' now = 40 (recommended)
-                .StopLossTicks = _stopLossTicks     ' now = 20 (recommended)
+                .Quantity = _quantity,
+                .TakeProfitPct = _takeProfitPct,
+                .StopLossPct = _stopLossPct,
+                .Leverage = _leverage,
+                .ScaleInAmount = _scaleInAmount,
+                .ScaleInLeverage = _scaleInLeverage,
+                .MinConfidencePct = _minConfidencePct
             }
 
             _currentStrategy = sd
             HasParsedStrategy = True
-            ParsedSummary = "EMA/RSI Combined | 5-min bars | 8-hr session | score ≥ confidence% triggers entry"
+            ParsedSummary = "EMA/RSI Combined | 5-min bars | 8-hr session | score ≥ confidence% triggers entry | scale-in at extremes | neutral exits all"
             StrategyText = Description
             ActiveStrategyText = "✔  EMA/RSI Combined  (5-min · 8hrs · EMA21/EMA50/RSI14)"
 
@@ -672,22 +808,28 @@ Namespace TopStepTrader.UI.ViewModels
                 "It awards 25 points if the fast moving average (EMA21) sits above the slow one (EMA50) — " &
                 "that's your classic uptrend sign. Another 20 points if the closing price is above the fast EMA, " &
                 "and 15 more if it's above the slow one too. The RSI14 is also in the mix for up to 20 points — " &
-                "a deeply oversold reading (below 30) earns the full amount; an overbought one (above 70) earns nothing. " &
+                "a deeply oversold reading (below 30) earns the full amount; an overbought reading (above 70) deducts " &
+                "10 points instead, actively pressing the bear side. " &
                 "Then 10 points if the fast EMA is rising since the last bar, and a final 10 if at least two of " &
                 "the last three candles closed higher." & vbLf & vbLf &
-                "When the total bull score hits your confidence threshold — 75 by default — a market Long order " &
-                "fires straight away, bracketed by your take-profit above and stop-loss below. If the bear score " &
-                "reaches the threshold first (bull score below 25), a Short goes in instead." & vbLf & vbLf &
-                "Recommended defaults: 5-minute bars · 40-tick take-profit · 20-tick stop-loss · 1 contract. " &
-                "The engine runs for 8 hours, covering both London open and New York session overlap."
+                "When the bull score reaches your confidence threshold (85 by default), a Long fires. When the " &
+                "bearish score matches that same threshold — meaning the bull score has dropped to 15 or below at " &
+                "the default setting — a Short fires. " &
+                "If the score stays deeply extreme (≥ 85 bull or ≤ 25 bear) for 3 consecutive new 5-minute bars, an additional scale-in trade is placed " &
+                "(up to 3 scale-ins after the initial, each $200 at 5× leverage). " &
+                "The moment the score drifts into the 40–60% neutral band, ALL open positions are closed immediately — " &
+                "the trend has lost conviction and the engine gets flat." & vbLf & vbLf &
+                "Defaults: 5-min bars · 4% take-profit · 1.5% stop-loss · 2.7:1 R:R · 5× leverage · $200 amount · 85% confidence threshold."
             HasStrategyDescription = True
 
             LogEntries.Clear()
             LogLine("─────────────────────────────────────────────────────────────────────")
             LogLine("Configure account, contract and risk settings above, then click  ▶ Start Monitoring.")
             LogLine("")
-            LogLine($"• Recommended: 5-min bars · TP={_takeProfitTicks}t · SL={_stopLossTicks}t · Qty={_quantity}")
-            LogLine("• Entry fires when combined EMA/RSI score ≥ confidence% bull (Long) or ≥ confidence% bear (Short)")
+            LogLine($"• Defaults: 5-min bars · TP={_takeProfitPct:F1}% · SL={_stopLossPct:F1}% · Amt=${_capitalAtRisk:F0} · Lvg={_leverage}×  · Confidence={_minConfidencePct}%")
+            LogLine("• Neutral confidence (40–60%) → ALL positions closed immediately (flatten)")
+            LogLine("• Scale-in: 3 more trades at $200/5× after 3 consecutive extreme new bars (cap: 4 total)")
+            LogLine("• Entry fires when combined EMA/RSI score ≥ 85% bull (Long) or ≥ 85% bear (Short)")
             LogLine("• 6 weighted signals evaluated on every completed 5-minute bar")
             LogLine("• Duration: 8 hours — covers London open + NY session overlap")
             LogLine("")
@@ -695,7 +837,169 @@ Namespace TopStepTrader.UI.ViewModels
         End Sub
 
         ''' <summary>
-        ''' Live contract search with 300 ms debounce.
+        ''' One-click activate: builds the Multi-Confluence Engine strategy definition.
+        ''' Uses hardcoded optimal parameters (15-min bars, all 7 conditions required).
+        ''' Sets HasParsedStrategy = True so Start Monitoring becomes enabled immediately.
+        ''' TP/SL percentage fields are zeroed; the engine uses ATR-derived price levels.
+        ''' </summary>
+        Private Sub ApplyMultiConfluenceEngine()
+            Const Description As String =
+                "Multi-Confluence Engine — 7-condition Ichimoku + EMA + MACD + StochRSI + ADX strategy." & vbLf &
+                "ALL conditions must align: price above/below Ichimoku Cloud, EMA21, Tenkan/Kijun crossover, " &
+                "Lagging Span confirmation, ADX > 25 with DI alignment, MACD histogram direction, StochRSI gate." & vbLf &
+                "Timeframe: 15-minute bars. SL = min(1.5×ATR, cloud edge); TP = 2:1 reward-to-risk."
+
+            ' ATR-based dynamic SL/TP — set pct to 0 so the engine uses _mcCloudSlPrice + ATR
+            TakeProfitPct = 0D
+            StopLossPct = 0D
+            Leverage = 5
+            Quantity = 1
+
+            Dim sd As New StrategyDefinition With {
+                .Name = "Multi-Confluence Engine",
+                .Indicator = Core.Enums.StrategyIndicatorType.MultiConfluence,
+                .Condition = Core.Enums.StrategyConditionType.MultiConfluence,
+                .IndicatorPeriod = 80,
+                .SecondaryPeriod = 0,
+                .IndicatorMultiplier = 0,
+                .GoLongWhenBelowBands = True,
+                .GoShortWhenAboveBands = True,
+                .TimeframeMinutes = 15,
+                .DurationHours = 8,
+                .RawDescription = Description,
+                .CapitalAtRisk = _capitalAtRisk,
+                .Quantity = _quantity,
+                .TakeProfitPct = 0D,
+                .StopLossPct = 0D,
+                .Leverage = _leverage,
+                .ScaleInAmount = _scaleInAmount,
+                .ScaleInLeverage = _scaleInLeverage,
+                .MinConfidencePct = _minConfidencePct
+            }
+
+            _currentStrategy = sd
+            HasParsedStrategy = True
+            ParsedSummary = "Multi-Confluence Engine | 15-min bars | 8-hr session | all 7 conditions required | ATR-based dynamic SL/TP"
+            StrategyText = Description
+            ActiveStrategyText = "✔  Multi-Confluence Engine  (15-min · 8hrs · Ichimoku · EMA21/50 · MACD · StochRSI · ADX)"
+
+            StrategyNakedDescription =
+                "Every 30 seconds, this strategy checks the latest completed 15-minute bar on your chosen commodity " &
+                "and runs seven independent filters. ALL seven must be green before a trade fires — no exceptions." & vbLf & vbLf &
+                "First, the Ichimoku Cloud: price must be completely above both Span A and Span B for a Long, or below both for a Short. " &
+                "Being inside the cloud is the 'fog zone' — the engine sits on its hands there. " &
+                "The Tenkan-sen (9-period midpoint) must cross above the Kijun-sen (26-period midpoint) for Long. " &
+                "The Lagging Span — which plots the current close 26 bars back on the chart — must also confirm the direction." & vbLf & vbLf &
+                "Next, trend strength: ADX must be above 25 (the market must be trending, not ranging) and DI+ must exceed DI- for Long. " &
+                "Then momentum: the MACD histogram must be positive AND rising — both direction and acceleration required. " &
+                "Finally, the Stochastic RSI K line must be below 0.8 for Long (not extremely overbought), above 0.2 for Short." & vbLf & vbLf &
+                "When a trade fires: Stop Loss is placed at whichever is closer — 1.5×ATR below entry, or the bottom of the Ichimoku Cloud. " &
+                "Take Profit is set at exactly 2× the SL distance (2:1 risk-reward). " &
+                "The ATR is fetched from the latest completed bar immediately before the order is placed, so volatility is always current." & vbLf & vbLf &
+                "Defaults: 15-min bars · dynamic ATR SL/TP · 8-hr session · 5× leverage."
+            HasStrategyDescription = True
+
+            LogEntries.Clear()
+            LogLine("─────────────────────────────────────────────────────────────────────")
+            LogLine("Configure account, contract and risk settings above, then click  ▶ Start Monitoring.")
+            LogLine("")
+            LogLine($"• Exits: SL = min(1.5×ATR, cloud edge) · TP = 2:1 reward-to-risk (dynamic per-trade ATR)")
+            LogLine("• No scale-in: single entry per signal — all 7 conditions must realign for a new entry")
+            LogLine("• Entry fires only when ALL 7 conditions align (Ichimoku + EMA21 + Tenkan/Kijun + Chikou + ADX + MACD + StochRSI)")
+            LogLine("• 15-minute bars — designed for commodity markets (Gold, Oil)")
+            LogLine("")
+            LogLine("━━━  Multi-Confluence Engine  ━━━")
+        End Sub
+
+        ''' <summary>
+        ''' One-click activate: builds the LULT Divergence strategy definition.
+        ''' Uses WaveTrend (Market Cipher B) on 5-minute bars with a 6-step gate.
+        ''' TP/SL percentage fields are zeroed; the engine derives absolute SL from the
+        ''' trigger wave extreme and sets TP at 2R.
+        ''' Time filter: 11:00-17:00 UTC (07:00-13:00 EST/EDT - London + NY pre-market).
+        ''' Best suited for NQ (Nasdaq 100); select NSDQ100 in the contract picker above.
+        ''' </summary>
+        Private Sub ApplyLultDivergence()
+            Const Description As String =
+                "LULT Divergence - 6-step Market Cipher B momentum-price divergence strategy." & vbLf &
+                "Steps: Anchor wave (WT1 breaches +-60) -> Trigger wave (shallower - reset if overshoots) -> " &
+                "price divergence -> Green/Red Dot (WT1xWT2 cross) -> Engulfing volume candle." & vbLf &
+                "Timeframe: 5-minute bars. SL = trigger extreme +/- tick buffer; TP = 2R. " &
+                "Time filter: 11:00-17:00 UTC (London + NY pre-market). Optimised for NQ."
+
+            TakeProfitPct = 0D
+            StopLossPct = 0D
+            Leverage = 5
+            Quantity = 1
+
+            Dim sd As New StrategyDefinition With {
+                .Name = "LULT Divergence",
+                .Indicator = Core.Enums.StrategyIndicatorType.LultDivergence,
+                .Condition = Core.Enums.StrategyConditionType.LultDivergence,
+                .IndicatorPeriod = 100,
+                .SecondaryPeriod = 0,
+                .IndicatorMultiplier = 0,
+                .GoLongWhenBelowBands = True,
+                .GoShortWhenAboveBands = True,
+                .TimeframeMinutes = 5,
+                .DurationHours = 8,
+                .RawDescription = Description,
+                .CapitalAtRisk = _capitalAtRisk,
+                .Quantity = _quantity,
+                .TakeProfitPct = 0D,
+                .StopLossPct = 0D,
+                .Leverage = _leverage,
+                .ScaleInAmount = 0D,
+                .ScaleInLeverage = 1,
+                .MinConfidencePct = _minConfidencePct
+            }
+
+            _currentStrategy = sd
+            HasParsedStrategy = True
+            ParsedSummary = "LULT Divergence | 5-min bars | 8-hr session | 6-step gate | SL = trigger extreme | TP = 2R"
+            StrategyText = Description
+            ActiveStrategyText = "✔  LULT Divergence  (5-min · 8hrs · WaveTrend · Anchor/Trigger · 2R)"
+
+            StrategyNakedDescription =
+                "Every 30 seconds, this strategy looks at the latest completed 5-minute bar and " &
+                "runs the WaveTrend oscillator — a faithful simulation of Market Cipher B's blue wave. " &
+                "A trade only fires after six conditions pass in strict sequence." & vbLf & vbLf &
+                "Step 1–2: The strategy waits for an Anchor wave — the oscillator dives below -60 (oversold) " &
+                "for a Long setup, or surges above +60 (overbought) for a Short. Then it waits for a Trigger wave: " &
+                "a second oscillator swing in the same direction." & vbLf & vbLf &
+                "Step 3: The trigger must be SHALLOWER than the anchor — a higher low for buys, a lower high for sells. " &
+                "If the trigger overshoots and goes deeper, the entire setup is scrapped and the engine resets. " &
+                "This is the core discipline of the method." & vbLf & vbLf &
+                "Step 4: Price divergence must be confirmed — while the oscillator makes a higher low, price must make a LOWER low (Long). " &
+                "Momentum is weakening while price is still falling — that is the divergence edge." & vbLf & vbLf &
+                "Step 5: A Green Dot (Long) or Red Dot (Short) must appear — the WaveTrend line (WT1) crossing its signal " &
+                "line (WT2) at the trigger wave valley or peak. This confirms the momentum reversal is underway." & vbLf & vbLf &
+                "Step 6: Finally, a same-direction Engulfing Volume Candle must close — a bullish candle whose body fully " &
+                "engulfs the previous bar, with a lower wick no bigger than 40% of the body." & vbLf & vbLf &
+                "Entry fires at market on the bar immediately after the engulfing candle. " &
+                "Stop loss is placed 2–3 ticks beyond the trigger wave extreme. " &
+                "Take profit is set at 2R (twice the SL distance from entry). " &
+                "If a historical swing sits between entry and 2R, 50% is closed there and stop moves to breakeven." & vbLf & vbLf &
+                "Time filter: 11:00–17:00 UTC only (07:00–13:00 EST/EDT — London open + New York pre-market). " &
+                "Signals outside this window are logged but no orders are placed." & vbLf & vbLf &
+                "Defaults: 5-min bars · SL at trigger extreme · TP = 2R · 5x leverage · 8-hr session. " &
+                "Select NSDQ100 in the contract picker above for best results."
+            HasStrategyDescription = True
+
+            LogEntries.Clear()
+            LogLine("─────────────────────────────────────────────────────────────────────")
+            LogLine("Configure account, contract and risk settings above, then click  ▶ Start Monitoring.")
+            LogLine("  ⚠  Select NSDQ100 in the contract picker — LULT is optimised for NQ 5-min bars.")
+            LogLine("")
+            LogLine("• Time filter: 11:00–17:00 UTC (07:00–13:00 EST/EDT) — signals ignored outside window")
+            LogLine("• SL = trigger wave extreme ± tick buffer · TP = 2R · Partial TP at nearest swing (50 %)")
+            LogLine("• RESET if trigger wave overshoots anchor — engine waits for a clean new setup")
+            LogLine("• 6-step gate: Anchor → Trigger (shallower) → Divergence → Dot → Engulfing candle")
+            LogLine("")
+            LogLine("━━━  LULT Divergence  ━━━")
+        End Sub
+
+        ''' <summary>
         ''' Called from the ContractSearchText setter on the UI thread; the actual
         ''' work runs on a ThreadPool thread via Task.Run in the setter.
         ''' Requires at least 2 characters before it issues an API call.
@@ -767,8 +1071,9 @@ Namespace TopStepTrader.UI.ViewModels
             ' Apply user overrides
             sd.CapitalAtRisk = _capitalAtRisk
             sd.Quantity = _quantity
-            sd.TakeProfitTicks = _takeProfitTicks
-            sd.StopLossTicks = _stopLossTicks
+            sd.TakeProfitPct = _takeProfitPct
+            sd.StopLossPct = _stopLossPct
+            sd.Leverage = _leverage
 
             _currentStrategy = sd
             HasParsedStrategy = True
@@ -825,16 +1130,12 @@ Namespace TopStepTrader.UI.ViewModels
             _currentStrategy.ContractId = _selectedContractId.Trim()
             _currentStrategy.CapitalAtRisk = _capitalAtRisk
             _currentStrategy.Quantity = _quantity
-            _currentStrategy.TakeProfitTicks = _takeProfitTicks
-            _currentStrategy.StopLossTicks = _stopLossTicks
-            _currentStrategy.TickSize = If(_selectedContract IsNot Nothing AndAlso _selectedContract.TickSize > 0, _selectedContract.TickSize, 1D)
+            _currentStrategy.TakeProfitPct = _takeProfitPct
+            _currentStrategy.StopLossPct = _stopLossPct
+            _currentStrategy.Leverage = _leverage
             _currentStrategy.MinConfidencePct = _minConfidencePct
-
-            ' Resolve TickValue from FavouriteContracts for P&L calculation in performance panel
-            Dim favMatch = Core.Trading.FavouriteContracts.GetDefaults().FirstOrDefault(
-                Function(f) _selectedContractId.IndexOf(f.ContractId.Substring(0, Math.Min(10, f.ContractId.Length)),
-                                                         StringComparison.OrdinalIgnoreCase) >= 0)
-            _currentStrategy.TickValue = If(favMatch IsNot Nothing AndAlso favMatch.TickValue > 0, favMatch.TickValue, 1D)
+            _currentStrategy.ScaleInAmount = _scaleInAmount
+            _currentStrategy.ScaleInLeverage = _scaleInLeverage
 
             LogEntries.Clear()
             Dispatch(Sub()
@@ -874,6 +1175,8 @@ Namespace TopStepTrader.UI.ViewModels
             Dispatch(Sub()
                          IsRunning = False
                          StatusText = "● Idle"
+                         LiveConfidencePct = 0
+                         LiveConfidenceDirection = String.Empty
                          LogLine($"Engine stopped: {reason}")
                      End Sub)
         End Sub
@@ -881,7 +1184,9 @@ Namespace TopStepTrader.UI.ViewModels
         Private Sub OnTradeOpened(sender As Object, e As Core.Events.TradeOpenedEventArgs)
             Dispatch(Sub()
                          Dim row As New TradeRowViewModel(e.Side, e.ContractId, e.ConfidencePct,
-                                                          e.EntryTime, e.ExternalOrderId)
+                                                          e.EntryTime, e.ExternalOrderId,
+                                                          e.EtoroPositionId, e.OpenedAtUtc,
+                                                          e.Amount, e.Leverage, e.EntryPrice)
                          TradeRows.Insert(0, row)
                          HasActivePosition = True
                          NotifyPropertyChanged(NameOf(HasTradeRows))
@@ -890,11 +1195,37 @@ Namespace TopStepTrader.UI.ViewModels
 
         Private Sub OnTradeClosed(sender As Object, e As Core.Events.TradeClosedEventArgs)
             Dispatch(Sub()
-                         ' Update the most-recent (top) row with the result
-                         If TradeRows.Count > 0 Then
-                             TradeRows(0).Close(e.ExitReason, e.PnL)
-                         End If
-                         HasActivePosition = False
+                         ' Close the first in-progress row.  The engine fires this event once per
+                         ' tracked open trade (initial + each scale-in), so sequential calls here
+                         ' will walk through and reconcile every stale "In Progress" UI row.
+                         Dim openRow = TradeRows.FirstOrDefault(Function(r) r.IsInProgress)
+                         openRow?.Close(e.ExitReason, e.PnL)
+                         HasActivePosition = TradeRows.Any(Function(r) r.IsInProgress)
+                     End Sub)
+        End Sub
+
+        Private Sub OnBarPriceUpdated(sender As Object, currentPrice As Decimal)
+            Dispatch(Sub()
+                         For Each row In TradeRows
+                             If row.IsInProgress Then row.UpdatePnl(currentPrice)
+                         Next
+                     End Sub)
+        End Sub
+
+        Private Sub OnPositionSynced(sender As Object, e As Core.Events.PositionSyncedEventArgs)
+            Dispatch(Sub()
+                         Dim openRow = TradeRows.FirstOrDefault(Function(r) r.IsInProgress)
+                         openRow?.ApplyApiSnapshot(e.PositionId, e.UnrealizedPnlUsd, e.OpenedAtUtc)
+                     End Sub)
+        End Sub
+
+        Private Sub OnConfidenceUpdated(sender As Object, e As Core.Events.ConfidenceUpdatedEventArgs)
+            Dispatch(Sub()
+                         Dim dominant = If(e.UpPct >= e.DownPct, "UP", "DOWN")
+                         Dim dominantPct = If(e.UpPct >= e.DownPct, e.UpPct, e.DownPct)
+                         LiveConfidenceDirection = dominant
+                         LiveConfidencePct = dominantPct
+                         AdxGatePassed = e.AdxGatePassed
                      End Sub)
         End Sub
 
@@ -920,6 +1251,9 @@ Namespace TopStepTrader.UI.ViewModels
                 RemoveHandler _engine.ExecutionStopped, AddressOf OnEngineStopped
                 RemoveHandler _engine.TradeOpened, AddressOf OnTradeOpened
                 RemoveHandler _engine.TradeClosed, AddressOf OnTradeClosed
+                RemoveHandler _engine.BarPriceUpdated, AddressOf OnBarPriceUpdated
+                RemoveHandler _engine.PositionSynced, AddressOf OnPositionSynced
+                RemoveHandler _engine.ConfidenceUpdated, AddressOf OnConfidenceUpdated
                 _searchCts?.Cancel()
                 _searchCts?.Dispose()
                 _engine.Dispose()

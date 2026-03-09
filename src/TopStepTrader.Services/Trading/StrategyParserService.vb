@@ -152,6 +152,23 @@ Namespace TopStepTrader.Services.Trading
                                   "When price closes below the Bollinger lower band (neckline break on H&S top), go short. " &
                                   "When price closes above the Bollinger upper band (neckline break on inverse H&S), go long. " &
                                   "Use 20-period Bollinger Bands on 5-minute bars over 6 hours. Target 60 ticks profit, 25 tick stop."
+            },
+            New StrategyDefinition With {
+                .Name = "Multi-Confluence Engine",
+                .TimeframeMinutes = 15,
+                .DurationHours = 8.0,
+                .Indicator = StrategyIndicatorType.MultiConfluence,
+                .IndicatorPeriod = 78,
+                .Condition = StrategyConditionType.MultiConfluence,
+                .GoLongWhenBelowBands = True,
+                .GoShortWhenAboveBands = True,
+                .RawDescription = "Multi-Confluence Engine: Combines Ichimoku Cloud (9/26/52), EMA 21, EMA 50, " &
+                                  "MACD(12/26/9), Stochastic RSI(14), and DMI/ADX(14) on 15-minute commodity bars. " &
+                                  "Long when: price above cloud AND EMA21, Tenkan>Kijun, Chikou above price 26 bars ago, " &
+                                  "ADX>25 with DI+>DI-, MACD histogram positive and rising, StochRSI<0.8. " &
+                                  "Short when all seven conditions are mirrored bearishly. " &
+                                  "SL = min(1.5×ATR, Ichimoku cloud edge). TP = 2:1 reward-to-risk. " &
+                                  "Minimum 80 bars required for full Ichimoku warm-up."
             }
         }
 

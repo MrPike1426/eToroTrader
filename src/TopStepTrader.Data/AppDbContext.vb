@@ -169,6 +169,57 @@ Namespace TopStepTrader.Data
             Finally
                 If mustClose Then conn.Close()
             End Try
+
+            ' ── RC-5: add eToro amount/leverage/SL/TP columns to Orders table ────────
+            ' SQLite does not support ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so each
+            ' statement is attempted individually and "duplicate column name" errors are
+            ' silently swallowed, making this block fully idempotent on every startup.
+            Dim mustClose2 = (conn.State <> ConnectionState.Open)
+            If mustClose2 Then conn.Open()
+            Try
+                Dim orderAlters = New String() {
+                    "ALTER TABLE ""Orders"" ADD COLUMN ""Amount"" TEXT",
+                    "ALTER TABLE ""Orders"" ADD COLUMN ""Leverage"" INTEGER NOT NULL DEFAULT 1",
+                    "ALTER TABLE ""Orders"" ADD COLUMN ""StopLossRate"" TEXT",
+                    "ALTER TABLE ""Orders"" ADD COLUMN ""TakeProfitRate"" TEXT"
+                }
+                For Each ddl In orderAlters
+                    Try
+                        Using cmd = conn.CreateCommand()
+                            cmd.CommandText = ddl
+                            cmd.ExecuteNonQuery()
+                        End Using
+                    Catch ex As Exception
+                        ' Ignore "duplicate column name" — column already present from a prior run.
+                        If Not ex.Message.Contains("duplicate column") Then Throw
+                    End Try
+                Next
+            Finally
+                If mustClose2 Then conn.Close()
+            End Try
+
+            ' ── Scale-in support: add PositionGroupId to BacktestTrades ─────────
+            ' Groups all legs of the same position (initial entry + scale-ins).
+            ' Idempotent: "duplicate column name" errors are silently swallowed.
+            Dim mustClose3 = (conn.State <> ConnectionState.Open)
+            If mustClose3 Then conn.Open()
+            Try
+                Dim tradeAlters = New String() {
+                    "ALTER TABLE ""BacktestTrades"" ADD COLUMN ""PositionGroupId"" INTEGER NOT NULL DEFAULT 0"
+                }
+                For Each ddl In tradeAlters
+                    Try
+                        Using cmd = conn.CreateCommand()
+                            cmd.CommandText = ddl
+                            cmd.ExecuteNonQuery()
+                        End Using
+                    Catch ex As Exception
+                        If Not ex.Message.Contains("duplicate column") Then Throw
+                    End Try
+                Next
+            Finally
+                If mustClose3 Then conn.Close()
+            End Try
         End Sub
 
     End Class

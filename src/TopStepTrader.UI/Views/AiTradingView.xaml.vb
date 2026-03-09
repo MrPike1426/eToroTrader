@@ -26,11 +26,12 @@ Namespace TopStepTrader.UI.Views
         End Sub
 
         ''' <summary>
-        ''' Scroll the log ListBox to the bottom whenever a new entry is added.
+        ''' Scroll the log to the top whenever a new entry is inserted at position 0,
+        ''' keeping the most-recent line always visible at the top (console-style).
         ''' </summary>
         Private Sub OnLogChanged(sender As Object, e As NotifyCollectionChangedEventArgs)
             If e.Action = NotifyCollectionChangedAction.Add AndAlso LogList.Items.Count > 0 Then
-                LogList.ScrollIntoView(LogList.Items(LogList.Items.Count - 1))
+                LogList.ScrollIntoView(LogList.Items(0))
             End If
         End Sub
 

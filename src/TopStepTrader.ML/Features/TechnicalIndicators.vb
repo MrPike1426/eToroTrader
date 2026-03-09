@@ -217,6 +217,317 @@ Namespace TopStepTrader.ML.Features
 
         ' ── Helpers ──────────────────────────────────────────────────────────
 
+        ' ── DMI / ADX ────────────────────────────────────────────────────────────
+
+        ''' <summary>
+        ''' Directional Movement Index — returns (+DI, -DI, ADX) arrays using
+        ''' Wilder smoothing (identical to the ATR and RSI smoothing convention).
+        ''' First valid index is 2×period−1 (warm-up matches TradingView default).
+        ''' </summary>
+        Public Function DMI(highs As IList(Of Decimal),
+                            lows As IList(Of Decimal),
+                            closes As IList(Of Decimal),
+                            Optional period As Integer = 14) As (PlusDI As Single(), MinusDI As Single(), ADX As Single())
+
+            Dim n = Math.Min(Math.Min(highs.Count, lows.Count), closes.Count)
+            Dim plusDI(n - 1) As Single
+            Dim minusDI(n - 1) As Single
+            Dim adxArr(n - 1) As Single
+            For i = 0 To n - 1
+                plusDI(i) = Single.NaN
+                minusDI(i) = Single.NaN
+                adxArr(i) = Single.NaN
+            Next
+            If n < period + 1 Then Return (plusDI, minusDI, adxArr)
+
+            ' ── Raw TR, +DM, -DM ──────────────────────────────────────────────
+            Dim trs(n - 1) As Double
+            Dim pdms(n - 1) As Double   ' +DM
+            Dim mdms(n - 1) As Double   ' -DM
+            For i = 1 To n - 1
+                Dim hl = CDbl(highs(i) - lows(i))
+                Dim hc = Math.Abs(CDbl(highs(i)) - CDbl(closes(i - 1)))
+                Dim lc = Math.Abs(CDbl(lows(i)) - CDbl(closes(i - 1)))
+                trs(i) = Math.Max(hl, Math.Max(hc, lc))
+
+                Dim upMove = CDbl(highs(i) - highs(i - 1))
+                Dim downMove = CDbl(lows(i - 1) - lows(i))
+                pdms(i) = If(upMove > downMove AndAlso upMove > 0, upMove, 0.0)
+                mdms(i) = If(downMove > upMove AndAlso downMove > 0, downMove, 0.0)
+            Next
+
+            ' ── Wilder-smooth TR, +DM, -DM (seed with sum of first `period` values) ──
+            Dim smoothTR = trs.Skip(1).Take(period).Sum()
+            Dim smoothPDM = pdms.Skip(1).Take(period).Sum()
+            Dim smoothMDM = mdms.Skip(1).Take(period).Sum()
+
+            ' ── DX and seed ADX ───────────────────────────────────────────────
+            Dim dxArr(n - 1) As Double
+            Dim firstValid = period   ' index of first valid DI value (1-based DM array → period index)
+
+            Dim pdi0 = If(smoothTR > 0, CSng(100.0 * smoothPDM / smoothTR), 0.0F)
+            Dim mdi0 = If(smoothTR > 0, CSng(100.0 * smoothMDM / smoothTR), 0.0F)
+            plusDI(firstValid) = pdi0
+            minusDI(firstValid) = mdi0
+            Dim diSum0 = CDbl(pdi0) + CDbl(mdi0)
+            dxArr(firstValid) = If(diSum0 > 0, 100.0 * Math.Abs(CDbl(pdi0) - CDbl(mdi0)) / diSum0, 0.0)
+
+            ' ── Rolling Wilder smoothing for the rest ──────────────────────────
+            Dim adxSeedSum As Double = dxArr(firstValid)
+            Dim adxSeedCount As Integer = 1
+
+            For i = firstValid + 1 To n - 1
+                smoothTR = smoothTR - smoothTR / period + trs(i)
+                smoothPDM = smoothPDM - smoothPDM / period + pdms(i)
+                smoothMDM = smoothMDM - smoothMDM / period + mdms(i)
+
+                Dim pdi = If(smoothTR > 0, CSng(100.0 * smoothPDM / smoothTR), 0.0F)
+                Dim mdi = If(smoothTR > 0, CSng(100.0 * smoothMDM / smoothTR), 0.0F)
+                plusDI(i) = pdi
+                minusDI(i) = mdi
+
+                Dim diSum = CDbl(pdi) + CDbl(mdi)
+                dxArr(i) = If(diSum > 0, 100.0 * Math.Abs(CDbl(pdi) - CDbl(mdi)) / diSum, 0.0)
+
+                ' Accumulate DX until we have `period` values, then start Wilder ADX
+                If adxSeedCount < period Then
+                    adxSeedSum += dxArr(i)
+                    adxSeedCount += 1
+                    If adxSeedCount = period Then
+                        ' Seed the ADX with the average of the first `period` DX values
+                        adxArr(i) = CSng(adxSeedSum / period)
+                    End If
+                Else
+                    ' Wilder smoothing: ADX(i) = (ADX(i-1)×(period-1) + DX(i)) / period
+                    Dim prevAdx = If(Single.IsNaN(adxArr(i - 1)), 0.0F, adxArr(i - 1))
+                    adxArr(i) = CSng((CDbl(prevAdx) * (period - 1) + dxArr(i)) / period)
+                End If
+            Next
+
+            Return (plusDI, minusDI, adxArr)
+        End Function
+
+        ' ── Ichimoku Cloud ────────────────────────────────────────────────────────
+
+        ''' <summary>
+        ''' Ichimoku Kinkō Hyō — returns Tenkan-sen, Kijun-sen, Senkou Span A and Span B arrays,
+        ''' each the same length as the input series.
+        ''' SpanA and SpanB are projected <paramref name="displacement"/> bars forward so the
+        ''' value at the last index reflects the "current" cloud visible on the chart.
+        ''' The Chikou (Lagging) Span is not returned — callers compare
+        ''' closes(n-1) vs closes(n-1-displacement) directly.
+        ''' </summary>
+        Public Function IchimokuCloud(
+                highs As IList(Of Decimal),
+                lows As IList(Of Decimal),
+                closes As IList(Of Decimal),
+                Optional tenkanPeriod As Integer = 9,
+                Optional kijunPeriod As Integer = 26,
+                Optional senkouBPeriod As Integer = 52,
+                Optional displacement As Integer = 26) As (Tenkan As Single(), Kijun As Single(), SpanA As Single(), SpanB As Single())
+
+            Dim n = Math.Min(Math.Min(highs.Count, lows.Count), closes.Count)
+            Dim tenkan(n - 1) As Single
+            Dim kijun(n - 1) As Single
+            Dim spanA(n - 1) As Single
+            Dim spanB(n - 1) As Single
+            For i = 0 To n - 1
+                tenkan(i) = Single.NaN
+                kijun(i) = Single.NaN
+                spanA(i) = Single.NaN
+                spanB(i) = Single.NaN
+            Next
+            If n = 0 Then Return (tenkan, kijun, spanA, spanB)
+
+            ' Compute Tenkan-sen and Kijun-sen (no displacement)
+            For i = 0 To n - 1
+                If i >= tenkanPeriod - 1 Then
+                    Dim hh = CDbl(highs(i))
+                    Dim ll = CDbl(lows(i))
+                    For j = i - tenkanPeriod + 1 To i
+                        If CDbl(highs(j)) > hh Then hh = CDbl(highs(j))
+                        If CDbl(lows(j)) < ll Then ll = CDbl(lows(j))
+                    Next
+                    tenkan(i) = CSng((hh + ll) / 2.0)
+                End If
+
+                If i >= kijunPeriod - 1 Then
+                    Dim hh = CDbl(highs(i))
+                    Dim ll = CDbl(lows(i))
+                    For j = i - kijunPeriod + 1 To i
+                        If CDbl(highs(j)) > hh Then hh = CDbl(highs(j))
+                        If CDbl(lows(j)) < ll Then ll = CDbl(lows(j))
+                    Next
+                    kijun(i) = CSng((hh + ll) / 2.0)
+                End If
+            Next
+
+            ' Project SpanA and SpanB forward by `displacement` bars.
+            ' SpanA[i + displacement] = (Tenkan[i] + Kijun[i]) / 2
+            ' SpanB[i + displacement] = (highest_high(senkouBPeriod, i) + lowest_low(senkouBPeriod, i)) / 2
+            For i = 0 To n - 1
+                Dim fwd = i + displacement
+                If fwd >= n Then Continue For
+
+                If Not Single.IsNaN(tenkan(i)) AndAlso Not Single.IsNaN(kijun(i)) Then
+                    spanA(fwd) = CSng((CDbl(tenkan(i)) + CDbl(kijun(i))) / 2.0)
+                End If
+
+                If i >= senkouBPeriod - 1 Then
+                    Dim hh = CDbl(highs(i))
+                    Dim ll = CDbl(lows(i))
+                    For j = i - senkouBPeriod + 1 To i
+                        If CDbl(highs(j)) > hh Then hh = CDbl(highs(j))
+                        If CDbl(lows(j)) < ll Then ll = CDbl(lows(j))
+                    Next
+                    spanB(fwd) = CSng((hh + ll) / 2.0)
+                End If
+            Next
+
+            Return (tenkan, kijun, spanA, spanB)
+        End Function
+
+        ' ── Stochastic RSI ────────────────────────────────────────────────────────
+
+        ''' <summary>
+        ''' Stochastic RSI: applies the Stochastic formula to RSI(rsiPeriod) values.
+        ''' Returns (%K, %D) normalised to the range 0.0–1.0.
+        ''' %K = (RSI - MinRSI_stochPeriod) / (MaxRSI_stochPeriod - MinRSI_stochPeriod)
+        ''' %D = signalPeriod-bar SMA of %K (signal / smoothing line).
+        ''' When the RSI range within the stoch window is effectively zero, %K is pinned at 0.5.
+        ''' </summary>
+        Public Function StochasticRSI(
+                closes As IList(Of Decimal),
+                Optional rsiPeriod As Integer = 14,
+                Optional stochPeriod As Integer = 14,
+                Optional signalPeriod As Integer = 3) As (K As Single(), D As Single())
+
+            Dim n = closes.Count
+            Dim kArr(n - 1) As Single
+            Dim dArr(n - 1) As Single
+            For i = 0 To n - 1
+                kArr(i) = Single.NaN
+                dArr(i) = Single.NaN
+            Next
+            If n < rsiPeriod + stochPeriod Then Return (kArr, dArr)
+
+            Dim rsiValues = RSI(closes, rsiPeriod)
+
+            ' Compute %K over a rolling stochPeriod window of RSI values
+            For i = stochPeriod - 1 To n - 1
+                If Single.IsNaN(rsiValues(i)) Then Continue For
+                Dim minRsi = Single.MaxValue
+                Dim maxRsi = Single.MinValue
+                For j = i - stochPeriod + 1 To i
+                    If Not Single.IsNaN(rsiValues(j)) Then
+                        If rsiValues(j) < minRsi Then minRsi = rsiValues(j)
+                        If rsiValues(j) > maxRsi Then maxRsi = rsiValues(j)
+                    End If
+                Next
+                Dim rng = maxRsi - minRsi
+                kArr(i) = If(rng < 0.0001F, 0.5F,
+                              CSng((CDbl(rsiValues(i)) - CDbl(minRsi)) / CDbl(rng)))
+            Next
+
+            ' %D = signalPeriod-period SMA of %K
+            For i = signalPeriod - 1 To n - 1
+                Dim sum As Double = 0
+                Dim cnt = 0
+                For j = i - signalPeriod + 1 To i
+                    If Not Single.IsNaN(kArr(j)) Then
+                        sum += CDbl(kArr(j))
+                        cnt += 1
+                    End If
+                Next
+                If cnt = signalPeriod Then
+                    dArr(i) = CSng(sum / signalPeriod)
+                End If
+            Next
+
+            Return (kArr, dArr)
+        End Function
+
+        ' ── WaveTrend (Market Cipher B simulation) ───────────────────────────────
+
+        ''' <summary>
+        ''' WaveTrend oscillator — simulates the momentum "blue wave" of Market Cipher B.
+        ''' WT1 oscillates around zero; ±60 are the standard overbought/oversold thresholds.
+        ''' WT2 is a <paramref name="signalSmooth"/>-bar SMA of WT1 (signal / smoothing line).
+        ''' A Green Dot fires when WT1 crosses above WT2 near an oversold trough (WT1 &lt; -60).
+        ''' A Red Dot fires when WT1 crosses below WT2 near an overbought peak (WT1 &gt; +60).
+        ''' Formula:
+        '''   HLC3 = (H + L + C) / 3
+        '''   ESA  = EMA(HLC3, channelLength)
+        '''   D    = EMA(|HLC3 − ESA|, channelLength)
+        '''   CI   = (HLC3 − ESA) / (0.015 × D)
+        '''   WT1  = EMA(CI, avgLength)
+        '''   WT2  = SMA(WT1, signalSmooth)
+        ''' </summary>
+        Public Function WaveTrend(
+                highs As IList(Of Decimal),
+                lows As IList(Of Decimal),
+                closes As IList(Of Decimal),
+                Optional channelLength As Integer = 10,
+                Optional avgLength As Integer = 21,
+                Optional signalSmooth As Integer = 4) As (Wt1 As Single(), Wt2 As Single())
+
+            Dim n = Math.Min(Math.Min(highs.Count, lows.Count), closes.Count)
+            Dim wt1(n - 1) As Single
+            Dim wt2(n - 1) As Single
+            For i = 0 To n - 1
+                wt1(i) = Single.NaN
+                wt2(i) = Single.NaN
+            Next
+            If n < channelLength + avgLength + signalSmooth Then Return (wt1, wt2)
+
+            ' HLC3 — typical price
+            Dim hlc3(n - 1) As Decimal
+            For i = 0 To n - 1
+                hlc3(i) = (highs(i) + lows(i) + closes(i)) / 3D
+            Next
+
+            ' ESA = EMA(HLC3, channelLength)
+            Dim esaArr = EMA(hlc3, channelLength)
+
+            ' D = EMA(|HLC3 − ESA|, channelLength)
+            Dim dInput(n - 1) As Decimal
+            For i = 0 To n - 1
+                dInput(i) = If(Single.IsNaN(esaArr(i)), 0D, Math.Abs(hlc3(i) - CDec(esaArr(i))))
+            Next
+            Dim dArr = EMA(dInput, channelLength)
+
+            ' CI = (HLC3 − ESA) / (0.015 × D);  guard against near-zero D to avoid ÷0
+            Dim ciArr(n - 1) As Decimal
+            For i = 0 To n - 1
+                If Single.IsNaN(esaArr(i)) OrElse Single.IsNaN(dArr(i)) OrElse dArr(i) < 0.00001F Then
+                    ciArr(i) = 0D
+                Else
+                    ciArr(i) = (hlc3(i) - CDec(esaArr(i))) / (0.015D * CDec(dArr(i)))
+                End If
+            Next
+
+            ' WT1 = EMA(CI, avgLength)
+            wt1 = EMA(ciArr, avgLength)
+
+            ' WT2 = rolling SMA(WT1, signalSmooth)
+            For i = signalSmooth - 1 To n - 1
+                If Single.IsNaN(wt1(i)) Then Continue For
+                Dim wtSum As Double = 0
+                Dim cnt As Integer = 0
+                For j = i - signalSmooth + 1 To i
+                    If Not Single.IsNaN(wt1(j)) Then
+                        wtSum += CDbl(wt1(j))
+                        cnt += 1
+                    End If
+                Next
+                If cnt = signalSmooth Then wt2(i) = CSng(wtSum / signalSmooth)
+            Next
+
+            Return (wt1, wt2)
+        End Function
+
+        ' ── Helpers ──────────────────────────────────────────────────────────────
+
         ''' <summary>Get the last non-NaN value from an indicator array.</summary>
         Public Function LastValid(series As Single()) As Single
             For i = series.Length - 1 To 0 Step -1

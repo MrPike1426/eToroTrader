@@ -60,6 +60,22 @@ Namespace TopStepTrader.UI
                     MainContent.Content = _viewModelLocator.BacktestView
                 Case "Sniper"
                     MainContent.Content = _viewModelLocator.SniperView
+                Case "Hydra"
+                    Dim hydraView = _viewModelLocator.HydraView
+                    Dim dashVm = TryCast(_viewModelLocator.DashboardView.DataContext, DashboardViewModel)
+                    Dim hydraVm = TryCast(hydraView.DataContext, HydraViewModel)
+                    If dashVm?.SelectedAccount IsNot Nothing AndAlso hydraVm IsNot Nothing Then
+                        hydraVm.SyncDashboardAccount(dashVm.SelectedAccount)
+                    End If
+                    MainContent.Content = hydraView
+                Case "CryptoJoe"
+                    Dim cryptoJoeView = _viewModelLocator.CryptoJoeView
+                    Dim dashVm2 = TryCast(_viewModelLocator.DashboardView.DataContext, DashboardViewModel)
+                    Dim cryptoJoeVm = TryCast(cryptoJoeView.DataContext, CryptoJoeViewModel)
+                    If dashVm2?.SelectedAccount IsNot Nothing AndAlso cryptoJoeVm IsNot Nothing Then
+                        cryptoJoeVm.SyncDashboardAccount(dashVm2.SelectedAccount)
+                    End If
+                    MainContent.Content = cryptoJoeView
                 Case "Settings"
                     MainContent.Content = _viewModelLocator.SettingsView
             End Select

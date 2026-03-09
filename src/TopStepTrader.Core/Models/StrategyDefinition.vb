@@ -32,9 +32,9 @@ Namespace TopStepTrader.Core.Models
         Public Property GoShortWhenAboveBands As Boolean = True
 
         ' ── Exit strategy (bracket orders) ────────────────────────────────
-        ''' <summary>Take-profit distance in ticks (0 = no TP order placed).</summary>
+        ''' <summary>Take-profit distance in ticks (0 = no TP). Non-eToro execution paths.</summary>
         Public Property TakeProfitTicks As Integer = 40
-        ''' <summary>Stop-loss distance in ticks (0 = no SL order placed).</summary>
+        ''' <summary>Stop-loss distance in ticks (0 = no SL). Non-eToro execution paths.</summary>
         Public Property StopLossTicks As Integer = 20
         ''' <summary>
         ''' Minimum price increment for the selected contract (e.g. 0.25 for ES, 5.0 for MBT).
@@ -45,6 +45,25 @@ Namespace TopStepTrader.Core.Models
         ''' <summary>Dollar value of one tick move (e.g. MES = $1.25, MGC = $1.00). Used for P&amp;L display.</summary>
         Public Property TickValue As Decimal = 1D
 
+        ' ── Exit strategy — eToro percentage-based (AI Trading path) ────────────────
+        ''' <summary>
+        ''' Take-profit as a percentage of entry price (0 = no TP order placed).
+        ''' E.g. 1.5 means close position when price rises 1.5% above entry (Long)
+        ''' or falls 1.5% below entry (Short).
+        ''' Used by the eToro AI Trading path; computed into an absolute StopLossRate.
+        ''' </summary>
+        Public Property TakeProfitPct As Decimal = 0D
+        ''' <summary>
+        ''' Stop-loss as a percentage of entry price (0 = no SL order placed).
+        ''' E.g. 0.75 means protect position if price moves 0.75% against entry.
+        ''' Used by the eToro AI Trading path; computed into an absolute StopLossRate.
+        ''' </summary>
+        Public Property StopLossPct As Decimal = 0D
+        ''' <summary>Leverage multiplier sent to eToro (default 1 = no leverage).
+        ''' Affects both the effective position size and the minimum cash required:
+        ''' minCash = MinNotionalUsd / Leverage.</summary>
+        Public Property Leverage As Integer = 1
+
         ' ── Signal filtering ──────────────────────────────────────────────
         ''' <summary>
         ''' Minimum weighted-score confidence required to fire a trade signal (0–100, default 75).
@@ -52,7 +71,17 @@ Namespace TopStepTrader.Core.Models
         ''' A trade is only placed when upPct >= MinConfidencePct (Long) or
         ''' downPct >= MinConfidencePct (Short). Set from UI by the user.
         ''' </summary>
-        Public Property MinConfidencePct As Integer = 75
+        Public Property MinConfidencePct As Integer = 85
+        ''' <summary>
+        ''' Cash amount per scale-in trade (EmaRsiWeightedScore only). Default $200.
+        ''' Set from the Scale-In panel in the UI before the engine starts.
+        ''' </summary>
+        Public Property ScaleInAmount As Decimal = 200D
+        ''' <summary>
+        ''' Leverage multiplier applied to each scale-in trade (default 5).
+        ''' Set from the Scale-In panel in the UI before the engine starts.
+        ''' </summary>
+        Public Property ScaleInLeverage As Integer = 5
 
         ' ── Runtime state (set when engine starts) ────────────────────────
         Public Property ExpiresAt As DateTimeOffset
@@ -89,8 +118,10 @@ Namespace TopStepTrader.Core.Models
                     directions = "Short only"
                 End If
 
-                Dim tp = If(TakeProfitTicks > 0, $"TP:{TakeProfitTicks}t", "No TP")
-                Dim sl = If(StopLossTicks > 0, $"SL:{StopLossTicks}t", "No SL")
+                Dim tp = If(TakeProfitPct > 0, $"TP:{TakeProfitPct:F2}%",
+                            If(TakeProfitTicks > 0, $"TP:{TakeProfitTicks}t", "No TP"))
+                Dim sl = If(StopLossPct > 0, $"SL:{StopLossPct:F2}%",
+                            If(StopLossTicks > 0, $"SL:{StopLossTicks}t", "No SL"))
 
                 Return $"{indicator} | {TimeframeMinutes}-min | {DurationHours}hrs | {directions} | {tp} {sl}"
             End Get

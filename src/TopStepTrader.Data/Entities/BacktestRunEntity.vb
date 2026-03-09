@@ -101,6 +101,12 @@ Namespace TopStepTrader.Data.Entities
         Public Property ExitReason As String
 
         Public Property SignalConfidence As Single?
+
+        ''' <summary>
+        ''' Links scale-in entries to their parent position.
+        ''' All legs of the same position share a PositionGroupId; 0 = legacy rows (no group).
+        ''' </summary>
+        Public Property PositionGroupId As Integer = 0
     End Class
 
 End Namespace

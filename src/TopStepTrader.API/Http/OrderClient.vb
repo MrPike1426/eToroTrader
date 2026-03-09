@@ -127,6 +127,19 @@ Namespace TopStepTrader.API.Http
             }
         End Function
 
+        ''' <summary>
+        ''' Returns the raw open positions from the eToro portfolio, including broker-reported P&amp;L.
+        ''' Used by OrderService.GetLivePositionSnapshotAsync for API-authoritative trade data.
+        ''' GET /api/v1/trading/info/demo/portfolio
+        ''' </summary>
+        Public Async Function GetPortfolioPositionsAsync(
+            Optional cancel As CancellationToken = Nothing) As Task(Of List(Of EToroPositionDto))
+
+            Dim endpoint = $"{_settings.BaseUrl}/api/v1/trading/info/demo/portfolio"
+            Dim portfolio = Await GetAsync(Of PortfolioResponse)(endpoint, cancel)
+            Return If(portfolio?.ClientPortfolio?.Positions, New List(Of EToroPositionDto)())
+        End Function
+
     End Class
 
 End Namespace

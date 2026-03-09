@@ -48,6 +48,29 @@ Namespace TopStepTrader.Core.Interfaces
         ''' Set to TripleEmaCascade for Sniper backtests.
         ''' </summary>
         Public Property StrategyCondition As StrategyConditionType = StrategyConditionType.EmaRsiWeightedScore
+
+        ''' <summary>
+        ''' Minimum ADX value required before an EmaRsiWeightedScore entry signal is acted on.
+        ''' 0 (default) = gate disabled — every bar meeting the confidence threshold is traded,
+        '''              regardless of trend strength. Useful for exploring raw signal frequency.
+        ''' 25          = matches live StrategyExecutionEngine behaviour (strong-trend-only entries).
+        ''' Ignored for TripleEmaCascade (which has no ADX gate).
+        ''' </summary>
+        Public Property MinAdxThreshold As Single = 0.0F
+
+        ' ── EmaRsiWeightedScore / eToro by-amount fields ────────────────────────
+        ''' <summary>Take-profit as % of entry price (0 = use tick-based TP). Mirrors AiTrading path.</summary>
+        Public Property TakeProfitPct As Decimal = 4.0D
+        ''' <summary>Stop-loss as % of entry price (0 = use tick-based SL). Mirrors AiTrading path.</summary>
+        Public Property StopLossPct As Decimal = 1.5D
+        ''' <summary>USD cash per initial entry (EmaRsiWeightedScore). Default $200.</summary>
+        Public Property EntryAmount As Decimal = 200D
+        ''' <summary>Leverage for the initial entry (EmaRsiWeightedScore). Default 5.</summary>
+        Public Property EntryLeverage As Integer = 5
+        ''' <summary>USD cash per scale-in trade (EmaRsiWeightedScore). Default $200.</summary>
+        Public Property ScaleInAmount As Decimal = 200D
+        ''' <summary>Leverage for scale-in trades. Default 5.</summary>
+        Public Property ScaleInLeverage As Integer = 5
     End Class
 
 End Namespace

@@ -24,6 +24,8 @@
                             <ColumnDefinition Width="20"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="220"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Column="0" Text="Account:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,10,0"/>
@@ -37,12 +39,24 @@
                         </ComboBox>
 
                         <TextBlock Grid.Column="3" Text="Contract:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,10,0"/>
-                        <controls:ContractSelectorControl Grid.Column="4" ContractId="{Binding TestTradeContractId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        <controls:ContractSelectorControl Grid.Column="4"
+                            ContractId="{Binding TestTradeContractId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            InstrumentId="{Binding TestTradeInstrumentId, Mode=TwoWay}"/>
+
+                        <TextBlock Grid.Column="6"
+                                   Text="{Binding TestTradeContractDisplay}"
+                                   VerticalAlignment="Center"
+                                   FontSize="16"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource AccentBrush}"/>
                     </Grid>
 
                     <!-- Row 2: Parameters -->
                     <Grid>
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="70"/>
+                            <ColumnDefinition Width="24"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="60"/>
                             <ColumnDefinition Width="24"/>
@@ -53,14 +67,26 @@
                             <ColumnDefinition Width="60"/>
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Column="0" Text="Qty:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
-                        <TextBox Grid.Column="1" Text="{Binding TestTradeQuantity, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Grid.Column="0" Text="Amount ($):" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="1" Text="{Binding TestTradeAmount, UpdateSourceTrigger=PropertyChanged}"/>
 
-                        <TextBlock Grid.Column="3" Text="Risk (SL ticks):" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
-                        <TextBox Grid.Column="4" Text="{Binding TestTradeStopLoss, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Grid.Column="3" Text="Leverage:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                        <ComboBox Grid.Column="4" ItemsSource="{Binding AvailableLeverages}"
+                                  SelectedItem="{Binding TestTradeLeverage, Mode=TwoWay}"
+                                  Style="{StaticResource UnclippedComboBoxStyle}"
+                                  ItemContainerStyle="{StaticResource DarkComboBoxItemStyle}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding StringFormat='x{0}'}" Foreground="White"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
 
-                        <TextBlock Grid.Column="6" Text="Gain (TP ticks):" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
-                        <TextBox Grid.Column="7" Text="{Binding TestTradeTakeProfit, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Grid.Column="6" Text="SL %:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="7" Text="{Binding TestTradeStopLoss, UpdateSourceTrigger=PropertyChanged}"/>
+
+                        <TextBlock Grid.Column="9" Text="TP %:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="10" Text="{Binding TestTradeTakeProfit, UpdateSourceTrigger=PropertyChanged}"/>
                     </Grid>
                 </StackPanel>
             </Border>

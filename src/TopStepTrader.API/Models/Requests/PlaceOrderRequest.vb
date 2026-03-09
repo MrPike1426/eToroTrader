@@ -18,9 +18,9 @@ Namespace TopStepTrader.API.Models.Requests
         <JsonPropertyName("Leverage")>
         Public Property Leverage As Integer = 1
 
-        ''' <summary>Number of units/shares to trade.</summary>
-        <JsonPropertyName("Units")>
-        Public Property Units As Double
+        ''' <summary>Number of units/shares to trade. Maps to the eToro AmountInUnits field.</summary>
+        <JsonPropertyName("AmountInUnits")>
+        Public Property AmountInUnits As Double
 
         ''' <summary>Stop-loss trigger price. Must be worse than current price.</summary>
         <JsonPropertyName("StopLossRate")>

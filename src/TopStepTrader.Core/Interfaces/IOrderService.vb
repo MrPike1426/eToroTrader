@@ -27,6 +27,25 @@ Namespace TopStepTrader.Core.Interfaces
         Function GetLiveWorkingOrdersAsync(accountId As Long,
                                            contractId As String,
                                            Optional cancel As CancellationToken = Nothing) As Task(Of IEnumerable(Of Order))
+
+        ''' <summary>
+        ''' Returns an API-authoritative snapshot of the live position for the given contract,
+        ''' including broker-reported unrealised P&amp;L and open timestamp.
+        ''' Matches by positionId when supplied; falls back to the first open position for the contract.
+        ''' Returns Nothing when no matching live position exists.
+        ''' </summary>
+        Function GetLivePositionSnapshotAsync(accountId As Long,
+                                              contractId As String,
+                                              Optional positionId As Long? = Nothing,
+                                              Optional cancel As CancellationToken = Nothing) As Task(Of LivePositionSnapshot)
+
+        ''' <summary>
+        ''' Closes all live positions for a specific instrument (used by reversal flush).
+        ''' Returns True if all closures succeeded or there were no positions to close.
+        ''' </summary>
+        Function FlattenContractAsync(accountId As Long,
+                                      contractId As String,
+                                      Optional cancel As CancellationToken = Nothing) As Task(Of Boolean)
     End Interface
 
 End Namespace

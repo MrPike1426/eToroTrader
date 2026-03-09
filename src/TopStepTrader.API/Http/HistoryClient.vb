@@ -86,7 +86,7 @@ Namespace TopStepTrader.API.Http
                             .High = c.High,
                             .Low = c.Low,
                             .Close = c.Close,
-                            .Volume = CLng(c.Volume)
+                            .Volume = CLng(c.Volume.GetValueOrDefault(0))
                         })
                     Next
                 Next

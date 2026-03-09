@@ -86,6 +86,18 @@ Namespace TopStepTrader.UI.ViewModels
             End Get
         End Property
 
+        Public ReadOnly Property HydraView As Views.HydraView
+            Get
+                Return Resolve(Of Views.HydraView)("Hydra")
+            End Get
+        End Property
+
+        Public ReadOnly Property CryptoJoeView As Views.CryptoJoeView
+            Get
+                Return Resolve(Of Views.CryptoJoeView)("CryptoJoe")
+            End Get
+        End Property
+
         Public Sub Dispose() Implements IDisposable.Dispose
             If Not _disposed Then
                 For Each scope In _scopes.Values

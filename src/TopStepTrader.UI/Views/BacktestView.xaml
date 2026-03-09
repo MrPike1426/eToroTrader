@@ -1,4 +1,4 @@
-<UserControl x:Class="TopStepTrader.UI.Views.BacktestView"
+﻿<UserControl x:Class="TopStepTrader.UI.Views.BacktestView"
              xmlns:controls="clr-namespace:TopStepTrader.UI.Controls"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -245,8 +245,10 @@
                         <RowDefinition Height="Auto"/>   <!-- Row  8: Progress bar -->
                         <RowDefinition Height="16"/>     <!-- Row  9: spacer -->
                         <RowDefinition Height="Auto"/>   <!-- Row 10: Metrics summary -->
-                        <RowDefinition Height="16"/>     <!-- Row 11: spacer -->
-                        <RowDefinition Height="*"/>      <!-- Row 12: Trade list -->
+                        <RowDefinition Height="8"/>      <!-- Row 11: spacer -->
+                        <RowDefinition Height="Auto"/>   <!-- Row 12: Developer note -->
+                        <RowDefinition Height="8"/>      <!-- Row 13: spacer -->
+                        <RowDefinition Height="*"/>      <!-- Row 14: Trade list -->
                     </Grid.RowDefinitions>
 
                     <!-- Page title -->
@@ -265,15 +267,19 @@
                                 <ColumnDefinition Width="*"/>     <!-- right value -->
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>   <!-- Row 0: Contract | Strategy -->
+                                <RowDefinition Height="Auto"/>   <!-- Row 0: Contract -->
                                 <RowDefinition Height="10"/>
                                 <RowDefinition Height="Auto"/>   <!-- Row 2: Capital/Qty | TP/SL -->
                                 <RowDefinition Height="10"/>
                                 <RowDefinition Height="Auto"/>   <!-- Row 4: Start Date | End Date -->
                                 <RowDefinition Height="10"/>
                                 <RowDefinition Height="Auto"/>   <!-- Row 6: Min Confidence | Interval -->
-                                <RowDefinition Height="10"/>
-                                <RowDefinition Height="Auto"/>   <!-- Row 8: (unused, reserved) -->
+                                <RowDefinition Height="8"/>      <!-- Row 7: spacer -->
+                                <RowDefinition Height="Auto"/>   <!-- Row 8: Min ADX threshold -->
+                                <RowDefinition Height="12"/>     <!-- Row 9: spacer before strategy panel -->
+                                <RowDefinition Height="Auto"/>   <!-- Row 10: Strategy cards -->
+                                <RowDefinition Height="12"/>     <!-- Row 11: spacer before description -->
+                                <RowDefinition Height="Auto"/>   <!-- Row 12: Strategy description -->
                             </Grid.RowDefinitions>
 
                             <!-- Row 0 ── Contract | Strategy ────────────── -->
@@ -286,29 +292,6 @@
                                        Grid.Row="0" Grid.Column="1"
                                        ContractId="{Binding ContractIdText, Mode=TwoWay,
                                                    UpdateSourceTrigger=PropertyChanged}"/>
-
-                            <TextBlock Grid.Row="0" Grid.Column="3"
-                                       Text="Strategy:" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <!--  Strategy dropdown — selecting a strategy triggers:
-                                  1. Auto-populate Capital/Qty/TP/SL from strategy defaults
-                                  2. Background bar download / availability check
-                                  White text via ItemTemplate (TICKET-019 pattern).  -->
-                            <ComboBox Grid.Row="0" Grid.Column="4"
-                                      ItemsSource="{Binding AvailableStrategies}"
-                                      SelectedItem="{Binding SelectedStrategyName, Mode=TwoWay,
-                                                    UpdateSourceTrigger=PropertyChanged}"
-                                      Style="{StaticResource UnclippedComboBoxStyle}"
-                                      ItemContainerStyle="{StaticResource DarkComboBoxItemStyle}"
-                                      ToolTip="Select strategy — Capital/Qty/TP/SL auto-adjust on selection; bars downloaded automatically">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding}"
-                                                   Foreground="White"
-                                                   VerticalAlignment="Center"/>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
 
                             <!-- Row 2 ── Capital / Qty | TP / SL ─────────── -->
                             <TextBlock Grid.Row="2" Grid.Column="0"
@@ -375,6 +358,131 @@
                                     </DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
+
+                            <!-- Row 8: Min ADX threshold -->
+                            <TextBlock Grid.Row="8" Grid.Column="0"
+                                       Text="Min ADX:"
+                                       VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <StackPanel Grid.Row="8" Grid.Column="1" Orientation="Horizontal">
+                                <TextBox Text="{Binding MinAdxThreshold, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="50"
+                                         ToolTip="Minimum ADX for entry. 0 = no gate (all EMA/RSI signals). 25 = match live engine."/>
+                                <TextBlock Text="(0 = off Â· 25 = live)"
+                                           VerticalAlignment="Center" Margin="8,0,0,0"
+                                           FontSize="10"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </StackPanel>
+
+                            <!-- Row 8 ── Strategy cards ──────────────────────────────────── -->
+                            <StackPanel Grid.Row="10" Grid.ColumnSpan="5">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="STRATEGY"
+                                               Style="{StaticResource SectionHeadingStyle}"
+                                               VerticalAlignment="Center" Margin="0"/>
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding ActiveStrategyText}"
+                                               Foreground="{StaticResource AccentBrush}"
+                                               FontFamily="Consolas" FontSize="10"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+
+                                <UniformGrid Columns="4" Margin="0,8,0,0">
+
+                                    <!-- 1. EMA/RSI Combined — ACTIVE -->
+                                    <Button Command="{Binding SelectEmaRsiCombinedCommand}"
+                                            Style="{StaticResource StrategyCardStyle}"
+                                            Margin="0,0,6,0"
+                                            ToolTip="6-signal weighted EMA/RSI strategy. Fires Long/Short when score &gt;= Min Confidence set above.">
+                                        <StackPanel>
+                                            <TextBlock Text="🎯  EMA/RSI Combined"
+                                                       FontWeight="SemiBold" FontSize="12"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="EMA21 · EMA50 · RSI14 weighted"
+                                                       FontSize="10" Margin="0,2,0,0"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Text="5-min bars · user confidence %"
+                                                       FontSize="9" Margin="0,1,0,0"
+                                                       Foreground="{StaticResource AccentBrush}"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- 2. Multi-Confluence Engine -->
+                                    <Button Command="{Binding SelectMultiConfluenceEngineCommand}"
+                                            Style="{StaticResource StrategyCardStyle}"
+                                            Margin="0,0,6,0"
+                                            ToolTip="All 7 conditions must align: Ichimoku Cloud, EMA21, Tenkan/Kijun, Lagging Span, ADX &gt; 25 + DI, MACD histogram, StochRSI gate. SL = min(1.5×ATR, cloud edge); TP = 2:1 R:R. 15-min commodity bars.">
+                                        <StackPanel>
+                                            <TextBlock Text="☁  Multi-Confluence"
+                                                       FontWeight="SemiBold" FontSize="12"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="Ichimoku · EMA · MACD · StochRSI · ADX"
+                                                       FontSize="10" Margin="0,2,0,0"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Text="15-min bars · ATR dynamic SL/TP"
+                                                       FontSize="9" Margin="0,1,0,0"
+                                                       Foreground="{StaticResource AccentBrush}"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- 3. Placeholder -->
+                                    <Button IsEnabled="False"
+                                            Style="{StaticResource StrategyCardStyle}"
+                                            Margin="0,0,6,0"
+                                            ToolTip="Coming soon">
+                                        <StackPanel>
+                                            <TextBlock Text="⚙  Strategy 3"
+                                                       FontWeight="SemiBold" FontSize="12"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Text="In Development"
+                                                       FontSize="10" Margin="0,2,0,0"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- 4. Placeholder -->
+                                    <Button IsEnabled="False"
+                                            Style="{StaticResource StrategyCardStyle}"
+                                            Margin="0"
+                                            ToolTip="Coming soon">
+                                        <StackPanel>
+                                            <TextBlock Text="⚙  Strategy 4"
+                                                       FontWeight="SemiBold" FontSize="12"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Text="In Development"
+                                                       FontSize="10" Margin="0,2,0,0"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                </UniformGrid>
+                            </StackPanel>
+
+                            <!-- Row 10 ── Strategy description panel ────────────────────── -->
+                            <Border Grid.Row="12" Grid.ColumnSpan="5"
+                                    Visibility="{Binding StrategyDescriptionPanelVisible,
+                                                 Converter={StaticResource BoolToVisibilityConverter}}">
+                                <StackPanel>
+                                    <TextBlock Text="WHAT THIS STRATEGY DOES"
+                                               Style="{StaticResource SectionHeadingStyle}"
+                                               Margin="0,0,0,6"/>
+                                    <TextBox Text="{Binding StrategyNakedDescription, Mode=OneWay}"
+                                             IsReadOnly="True"
+                                             AcceptsReturn="True" TextWrapping="Wrap"
+                                             FontSize="12" Padding="10,8"
+                                             Background="{StaticResource CardBrush}"
+                                             BorderThickness="0"
+                                             Foreground="{StaticResource TextPrimaryBrush}"
+                                             ToolTip="Plain-English explanation of the selected strategy"/>
+                                </StackPanel>
+                            </Border>
 
                         </Grid>
                     </Border>
@@ -463,8 +571,22 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- ── Developer note ─────────────────────────────────── -->
+                    <!--  Scale-in awareness note — always visible below the metrics summary.
+                          Explains why row count in the DataGrid may exceed TotalTrades in
+                          the summary (which counts positions, not individual entries).  -->
+                    <TextBlock Grid.Row="12"
+                               FontFamily="Consolas" FontSize="10"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               TextWrapping="Wrap">
+                        <Run Text="ℹ  Each row is one entry/scale-in leg. Rows sharing a Grp # are the same position. "/>
+                        <Run Text="Win rate and Avg P&amp;L are position-level, not per-row. "/>
+                        <Run Text="Note: backtest scale-in confirmation is bar-based, not 30-second tick-based."
+                             FontStyle="Italic"/>
+                    </TextBlock>
+
                     <!-- ── Trade list ─────────────────────────────────────── -->
-                    <DataGrid Grid.Row="12"
+                    <DataGrid Grid.Row="14"
                               ItemsSource="{Binding Trades}"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
@@ -497,6 +619,7 @@
                             </Style>
                         </DataGrid.CellStyle>
                         <DataGrid.Columns>
+                            <DataGridTextColumn Header="Grp"        Binding="{Binding PositionGroupId}" Width="44"/>
                             <DataGridTextColumn Header="Entry Time"  Binding="{Binding EntryTime}"  Width="130"/>
                             <DataGridTextColumn Header="Exit Time"   Binding="{Binding ExitTime}"   Width="130"/>
                             <DataGridTextColumn Header="Side"        Binding="{Binding Side}"       Width="60"/>

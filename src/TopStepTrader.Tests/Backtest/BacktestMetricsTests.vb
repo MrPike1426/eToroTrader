@@ -251,10 +251,11 @@ Namespace TopStepTrader.Tests.Backtest
         <Fact>
         Public Sub BuildResult_TwoWinnersOneLoss_WinRateAndTotalsCorrect()
             ' W: +$500, W: +$250, L: -$200  → 2 wins, 1 loss, total $550
+            ' Each trade gets a distinct PositionGroupId so BuildResult counts 3 positions.
             Dim trades = New List(Of BacktestTrade) From {
-                MakeClosedTrade(500D),
-                MakeClosedTrade(250D),
-                MakeClosedTrade(-200D)
+                MakeClosedTrade(500D,  positionGroupId:=1),
+                MakeClosedTrade(250D,  positionGroupId:=2),
+                MakeClosedTrade(-200D, positionGroupId:=3)
             }
             Dim config = MakeConfig()
             config.InitialCapital = 50000D
@@ -301,6 +302,32 @@ Namespace TopStepTrader.Tests.Backtest
             Assert.Equal("CON.F.US.MES.H26", result.ContractId)
             Assert.Equal(75000D, result.InitialCapital)
             Assert.Equal(75000D, result.FinalCapital)
+        End Sub
+
+        <Fact>
+        Public Sub BuildResult_ScaleInLegs_MetricsArePositionGroupBased()
+            ' Position 1: initial entry +$300, scale-in +$150 → group P&L = +$450 (winner)
+            ' Position 2: single entry -$100 → group P&L = -$100 (loser)
+            ' Expected: TotalTrades=2 (positions), WinRate=50%, TotalPnL=$350, AvgPnL=$175
+            Dim trades = New List(Of BacktestTrade) From {
+                MakeClosedTrade(300D,  positionGroupId:=1),   ' initial entry, group 1
+                MakeClosedTrade(150D,  positionGroupId:=1),   ' scale-in,      group 1
+                MakeClosedTrade(-100D, positionGroupId:=2)    ' separate position
+            }
+            Dim config = MakeConfig()
+
+            Dim result = BacktestMetrics.BuildResult(config, trades,
+                                                      finalCapital:=50350D, maxDrawdown:=100D)
+
+            ' Metrics are per position (group), not per individual entry row
+            Assert.Equal(2, result.TotalTrades)      ' 2 unique position groups
+            Assert.Equal(1, result.WinningTrades)    ' group 1 (+$450 > 0)
+            Assert.Equal(1, result.LosingTrades)     ' group 2 (-$100 ≤ 0)
+            Assert.Equal(0.5F, result.WinRate, 4)
+            Assert.Equal(350D, result.TotalPnL)      ' all legs summed
+            Assert.Equal(175D, result.AveragePnLPerTrade)  ' 350 / 2 positions
+            ' Raw trade rows are all preserved for display
+            Assert.Equal(3, result.Trades.Count)
         End Sub
 
         ' ══════════════════════════════════════════════════════════════════
@@ -432,14 +459,18 @@ Namespace TopStepTrader.Tests.Backtest
             }
         End Function
 
-        ''' <summary>Build a closed trade with PnL pre-set (for Sharpe / BuildResult tests).</summary>
-        Private Shared Function MakeClosedTrade(pnl As Decimal) As BacktestTrade
+        ''' <summary>Build a closed trade with PnL pre-set (for Sharpe / BuildResult tests).
+        ''' <paramref name="positionGroupId"/> defaults to 0 — pass a unique value per trade in BuildResult tests
+        ''' so each row is treated as its own position group.</summary>
+        Private Shared Function MakeClosedTrade(pnl As Decimal,
+                                                 Optional positionGroupId As Integer = 0) As BacktestTrade
             Return New BacktestTrade With {
                 .Side = "Buy",
                 .EntryPrice = 5000D,
                 .ExitPrice = 5000D,   ' price irrelevant — PnL set directly
                 .Quantity = 1,
                 .PnL = pnl,
+                .PositionGroupId = positionGroupId,
                 .EntryTime = DateTimeOffset.UtcNow,
                 .ExitTime = DateTimeOffset.UtcNow.AddMinutes(5)
             }

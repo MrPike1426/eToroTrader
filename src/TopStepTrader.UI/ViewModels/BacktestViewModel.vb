@@ -162,6 +162,20 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
+        Private _minAdxThreshold As String = "0"
+        ''' <summary>
+        ''' Minimum ADX value for entry. 0 = no ADX gate (default — see all raw signals).
+        ''' Set to 25 to match live engine behaviour (strong-trend-only entries).
+        ''' </summary>
+        Public Property MinAdxThreshold As String
+            Get
+                Return _minAdxThreshold
+            End Get
+            Set(value As String)
+                SetProperty(_minAdxThreshold, value)
+            End Set
+        End Property
+
         Private _selectedInterval As String = "5 min"
         ''' <summary>
         ''' Selected bar timeframe for backtest (display format: "1 min", "5 min", etc.).
@@ -438,9 +452,57 @@ Namespace TopStepTrader.UI.ViewModels
         Public ReadOnly Property AvailableContracts As New ObservableCollection(Of Contract)()
 
         ' ══════════════════════════════════════════════════════════════════════
+        ' STRATEGY PANEL PROPERTIES
+        ' ══════════════════════════════════════════════════════════════════════
+
+        Private _activeStrategyText As String = "None selected — click a card above"
+        ''' <summary>Shown inline next to the STRATEGY heading. Updates when a card is clicked.</summary>
+        Public Property ActiveStrategyText As String
+            Get
+                Return _activeStrategyText
+            End Get
+            Set(value As String)
+                SetProperty(_activeStrategyText, value)
+            End Set
+        End Property
+
+        Private _strategyNakedDescription As String = String.Empty
+        ''' <summary>Plain-English description shown in the “WHAT THIS STRATEGY DOES” panel.</summary>
+        Public Property StrategyNakedDescription As String
+            Get
+                Return _strategyNakedDescription
+            End Get
+            Set(value As String)
+                SetProperty(_strategyNakedDescription, value)
+            End Set
+        End Property
+
+        Private _hasStrategyDescription As Boolean = False
+        ''' <summary>True once a strategy card has been selected and the description is populated.
+        ''' Drives Visibility of the description panel in the XAML.</summary>
+        Public Property HasStrategyDescription As Boolean
+            Get
+                Return _hasStrategyDescription
+            End Get
+            Set(value As Boolean)
+                SetProperty(_hasStrategyDescription, value)
+                OnPropertyChanged(NameOf(StrategyDescriptionPanelVisible))
+            End Set
+        End Property
+
+        ''' <summary>True when a strategy has been selected. Drives Visibility of the description panel.</summary>
+        Public ReadOnly Property StrategyDescriptionPanelVisible As Boolean
+            Get
+                Return _hasStrategyDescription
+            End Get
+        End Property
+
+        ' ══════════════════════════════════════════════════════════════════════
         ' COMMANDS
         ' ══════════════════════════════════════════════════════════════════════
 
+        Public ReadOnly Property SelectEmaRsiCombinedCommand As RelayCommand
+        Public ReadOnly Property SelectMultiConfluenceEngineCommand As RelayCommand
         Public ReadOnly Property RunCommand As RelayCommand
         Public ReadOnly Property CancelCommand As RelayCommand
         Public ReadOnly Property LoadHistoryCommand As RelayCommand
@@ -470,6 +532,7 @@ Namespace TopStepTrader.UI.ViewModels
             ' Populate strategy dropdown — combined strategies only.
             ' Single-indicator strategies excluded per TICKET-006 design decision.
             AvailableStrategies.Add("EMA/RSI Combined")
+            AvailableStrategies.Add("Multi-Confluence Engine")
 
             ' Populate interval dropdown — only natively-supported ProjectX API timeframes.
             ' Removed: "3 min" (API falls back to 1-min), "10 min" (no API code), "4 hours" (no API code).
@@ -480,6 +543,8 @@ Namespace TopStepTrader.UI.ViewModels
             AvailableIntervals.Add("30 min")
             AvailableIntervals.Add("1 hour")
 
+            SelectEmaRsiCombinedCommand = New RelayCommand(AddressOf ApplyEmaRsiCombined)
+            SelectMultiConfluenceEngineCommand = New RelayCommand(AddressOf ApplyMultiConfluenceEngine)
             RunCommand = New RelayCommand(AddressOf ExecuteRun, Function() CanRun)
             CancelCommand = New RelayCommand(AddressOf ExecuteCancel, Function() CanCancel)
             LoadHistoryCommand = New RelayCommand(AddressOf LoadPreviousRuns)
@@ -508,13 +573,66 @@ Namespace TopStepTrader.UI.ViewModels
             If defaults IsNot Nothing Then
                 InitialCapital = defaults.Capital
                 Quantity = defaults.Qty
-                TakeProfitTicks = defaults.TakeProfitTicks
-                StopLossTicks = defaults.StopLossTicks
+                ' StrategyDefaults.TakeProfitPct / StopLossPct are percentage strings for the
+                ' eToro live-trading path (e.g. "4.0" = 4%). Do NOT copy them into the backtest
+                ' tick fields — tick fields retain their own defaults (20 tp / 10 sl).
             End If
         End Sub
 
         ''' <summary>
-        ''' Step 2b / Step 3: Ensure 5-minute bars are cached in SQLite for the selected
+        ''' One-click activate for EMA/RSI Combined on the strategy card panel.
+        ''' Sets SelectedStrategyName (which triggers parameter auto-fill and bar download),
+        ''' then populates the plain-English description panel.
+        ''' </summary>
+        Private Sub ApplyEmaRsiCombined()
+            ' Setting SelectedStrategyName triggers ApplyStrategyDefaults + DownloadBarsAsync
+            SelectedStrategyName = "EMA/RSI Combined"
+
+            ActiveStrategyText = "✔  EMA/RSI Combined  (5-min bars · EMA21/EMA50/RSI14)"
+
+            StrategyNakedDescription =
+                "Every 5 minutes, this strategy looks at the latest completed bar and runs six quick checks, " &
+                "tallying a bull score from 0 to 100." & vbLf & vbLf &
+                "It awards 25 points if EMA21 sits above EMA50 (uptrend sign), 20 points if price is above EMA21, " &
+                "and 15 more if price is above EMA50. The RSI14 contributes up to 20 points when in the 50–70 range " &
+                "(trending bullishly but not overbought). Then 10 points if EMA21 is rising, and a final 10 " &
+                "if at least two of the last three candles closed higher." & vbLf & vbLf &
+                "When the ADX is above 25 (trending market) and the bull score meets your Min Confidence threshold, " &
+                "a Long signal fires. When the bear score (100 − bull) meets the threshold, a Short fires." & vbLf & vbLf &
+                "Defaults: 5-min bars · 0.65 confidence threshold (65%)."
+
+            HasStrategyDescription = True
+        End Sub
+
+        ''' <summary>
+        ''' One-click activate for Multi-Confluence Engine on the strategy card panel.
+        ''' Sets SelectedStrategyName (which triggers parameter auto-fill and bar download),
+        ''' then populates the plain-English description panel.
+        ''' Designed for 15-minute commodity bars: Ichimoku + EMA21/50 + MACD + StochRSI + ADX.
+        ''' ALL seven long or short conditions must align before a signal fires.
+        ''' </summary>
+        Private Sub ApplyMultiConfluenceEngine()
+            SelectedStrategyName = "Multi-Confluence Engine"
+
+            ActiveStrategyText = "✔  Multi-Confluence Engine  (15-min bars · Ichimoku · EMA21/50 · MACD · StochRSI · ADX)"
+
+            StrategyNakedDescription =
+                "A high-conviction strategy for commodities that requires seven independent conditions to align simultaneously." & vbLf & vbLf &
+                "It checks the Ichimoku Cloud first: price must be entirely above (Long) or below (Short) both Span A and Span B. " &
+                "If price is inside the cloud — the 'fog zone' — no signal fires, regardless of other conditions. " &
+                "The Tenkan-sen (fast line) must also be above the Kijun-sen (slow line) for Long, and below for Short. " &
+                "The Lagging Span (current close) must clear the price level from 26 bars ago, confirming the move is genuine." & vbLf & vbLf &
+                "Layer two adds trend strength: ADX must be above 25 (trending market) and DI+ must exceed DI- for Long. " &
+                "Layer three adds momentum: the MACD histogram must be positive and rising for Long. " &
+                "Finally, the Stochastic RSI is checked to avoid entering an overbought market: K must be below 0.8 for Long." & vbLf & vbLf &
+                "Exits are ATR-based: Stop Loss at the closer of 1.5×ATR14 or the Ichimoku cloud edge; " &
+                "Take Profit at 2:1 reward-to-risk based on the actual SL distance." & vbLf & vbLf &
+                "Recommended for: 15-min bars on commodity contracts (Gold, Oil). Signals are rare but high-quality."
+
+            HasStrategyDescription = True
+        End Sub
+
+        ''' <summary>
         ''' contract and date range.  Calls BarCollectionService.EnsureBarsAsync() which:
         '''   - Returns immediately if ≥ 50 bars already exist (cache hit)
         '''   - Otherwise pages the ProjectX API in 500-bar batches and stores to SQLite
@@ -662,6 +780,9 @@ Namespace TopStepTrader.UI.ViewModels
             Dim conf As Single
             Single.TryParse(_minConfidence, conf)
 
+            Dim minAdx As Single
+            Single.TryParse(_minAdxThreshold, minAdx)
+
             Dim config As New BacktestConfiguration With {
                 .RunName = $"Backtest {DateTime.Now:yyyyMMdd-HHmm} — {_selectedStrategyName} ({_selectedInterval})",
                 .ContractId = contractId,
@@ -674,7 +795,11 @@ Namespace TopStepTrader.UI.ViewModels
                 .MinSignalConfidence = If(conf > 0, conf, 0.65F),
                 .Quantity = If(qty > 0, qty, 1),
                 .TickSize = GetTickSize(contractId),
-                .PointValue = GetPointValue(contractId)
+                .PointValue = GetPointValue(contractId),
+                .MinAdxThreshold = Math.Max(0.0F, minAdx),
+                .StrategyCondition = If(_selectedStrategyName = "Multi-Confluence Engine",
+                                        StrategyConditionType.MultiConfluence,
+                                        StrategyConditionType.EmaRsiWeightedScore)
             }
 
             _cancelSource = New CancellationTokenSource()
@@ -735,7 +860,7 @@ Namespace TopStepTrader.UI.ViewModels
         ''' MES:  $5 /point (was wrongly $50 — that is the full-size ES)
         ''' MNQ:  $2 /point
         ''' MGC: $10 /point (Micro Gold, 10 troy oz)
-        ''' MCL: $10 /point (Micro Crude, 10 barrels)
+        ''' MCL: $100 /point (Micro Crude, 100 barrels × $1/barrel per point)
         ''' </summary>
         Private Shared Function GetPointValue(contractId As String) As Decimal
             If contractId.Contains("MGC") Then Return 10.0D
@@ -790,13 +915,16 @@ Namespace TopStepTrader.UI.ViewModels
 
             Try
                 Dim sb As New StringBuilder()
-                sb.AppendLine("Entry Time,Exit Time,Side,Entry Price,Exit Price,P&L,Exit Reason,Confidence")
+                ' Note: Backtest scale-in confirmation is bar-based, not 30-second tick-based.
+                ' Each row is one entry/scale-in leg. Rows sharing a Group ID are the same position.
+                ' Metrics (win rate, avg P&L) are position-level, not per-row.
+                sb.AppendLine("Group,Entry Time,Exit Time,Side,Entry Price,Exit Price,P&L,Exit Reason,Confidence")
                 For Each t In Trades
-                    sb.AppendLine($"""{t.EntryTime}"",""{t.ExitTime}"",""{t.Side}""," &
+                    sb.AppendLine($"""{t.PositionGroupId}"",""{t.EntryTime}"",""{t.ExitTime}"",""{t.Side}""," &
                                   $"""{t.EntryPrice}"",""{t.ExitPrice}"",""{t.PnL}"",""{t.ExitReason}"",""{t.Confidence}""")
                 Next
                 File.WriteAllText(dlg.FileName, sb.ToString())
-                ProgressText = $"✓ Exported {Trades.Count} trades → {Path.GetFileName(dlg.FileName)}"
+                ProgressText = $"✓ Exported {Trades.Count} entries → {Path.GetFileName(dlg.FileName)}"
             Catch ex As Exception
                 ProgressText = $"✗ Export failed: {ex.Message}"
             End Try
@@ -846,6 +974,7 @@ Namespace TopStepTrader.UI.ViewModels
     ' ══════════════════════════════════════════════════════════════════════════
 
     Public Class BacktestTradeRowVm
+        Public Property PositionGroupId As String
         Public Property EntryTime As String
         Public Property ExitTime As String
         Public Property Side As String
@@ -855,13 +984,21 @@ Namespace TopStepTrader.UI.ViewModels
         Public Property ExitReason As String
         Public Property Confidence As String
 
+        Private ReadOnly _rawPnL As Decimal
+
+        ''' <summary>
+        ''' Derived from the raw decimal PnL — not from the formatted currency string,
+        ''' which uses "($n)" notation in en-US (StartsWith("-") would misidentify losses as wins).
+        ''' </summary>
         Public ReadOnly Property PnLColor As String
             Get
-                Return If(PnL.StartsWith("-"), "SellBrush", "BuyBrush")
+                Return If(_rawPnL >= 0D, "BuyBrush", "SellBrush")
             End Get
         End Property
 
         Public Sub New(t As BacktestTrade)
+            _rawPnL = t.PnL.GetValueOrDefault()
+            PositionGroupId = $"#{t.PositionGroupId}"
             EntryTime = t.EntryTime.LocalDateTime.ToString("MM/dd HH:mm")
             ExitTime = If(t.ExitTime.HasValue, t.ExitTime.Value.LocalDateTime.ToString("MM/dd HH:mm"), "—")
             Side = t.Side

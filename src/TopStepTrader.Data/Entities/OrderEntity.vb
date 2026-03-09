@@ -29,11 +29,26 @@ Namespace TopStepTrader.Data.Entities
         <Required>
         Public Property Quantity As Integer
 
+        ''' <summary>USD cash amount invested (eToro by-amount path). Nothing = quantity-based order.</summary>
+        <Column(TypeName:="decimal(18,6)")>
+        Public Property Amount As Decimal?
+
+        ''' <summary>Leverage multiplier applied to this order (1 = no leverage).</summary>
+        Public Property Leverage As Integer = 1
+
         <Column(TypeName:="decimal(18,6)")>
         Public Property LimitPrice As Decimal?
 
         <Column(TypeName:="decimal(18,6)")>
         Public Property StopPrice As Decimal?
+
+        ''' <summary>eToro stop-loss trigger price level (absolute rate). Nothing = no SL.</summary>
+        <Column(TypeName:="decimal(18,6)")>
+        Public Property StopLossRate As Decimal?
+
+        ''' <summary>eToro take-profit trigger price level (absolute rate). Nothing = no TP.</summary>
+        <Column(TypeName:="decimal(18,6)")>
+        Public Property TakeProfitRate As Decimal?
 
         ''' <summary>0=Pending, 1=Working, 2=Filled, 3=PartialFill, 4=Cancelled, 5=Rejected</summary>
         <Required>

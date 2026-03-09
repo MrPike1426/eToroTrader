@@ -8,6 +8,7 @@ Imports TopStepTrader.Core.Enums
 Imports TopStepTrader.Core.Events
 Imports TopStepTrader.Core.Interfaces
 Imports TopStepTrader.Core.Models
+Imports TopStepTrader.Core.Trading
 Imports TopStepTrader.Data.Repositories
 
 Namespace TopStepTrader.Services.Trading
@@ -74,7 +75,7 @@ Namespace TopStepTrader.Services.Trading
                         .InstrumentId = order.InstrumentId,
                         .IsBuy = (order.Side = OrderSide.Buy),
                         .Leverage = If(order.Leverage > 0, order.Leverage, 1),
-                        .Units = CDbl(order.Quantity),
+                        .AmountInUnits = CDbl(order.Quantity),
                         .StopLossRate = If(order.StopLossRate.HasValue, CDbl(order.StopLossRate.Value), CType(Nothing, Double?)),
                         .TakeProfitRate = If(order.TakeProfitRate.HasValue, CDbl(order.TakeProfitRate.Value), CType(Nothing, Double?))
                     }
@@ -86,6 +87,7 @@ Namespace TopStepTrader.Services.Trading
                     order.Status = OrderStatus.Working
                     Await _orderRepo.UpdateOrderStatusAsync(order.Id, order.Status, order.ExternalOrderId)
                     _logger.LogInformation("eToro order accepted. orderId={Ext}", order.ExternalOrderId)
+                    System.Console.Beep(880, 200)
 
                     ' Resolve positionId asynchronously so callers can close by position
                     Await ResolvePositionIdAsync(order)
@@ -117,10 +119,25 @@ Namespace TopStepTrader.Services.Trading
             If Not order.ExternalOrderId.HasValue Then Return
             Try
                 Dim info = Await _orderClient.GetOrderInfoAsync(order.ExternalOrderId.Value)
+
+                ' eToro returns errorCode > 0 (and statusID = 4) when the order is rejected
+                ' after initial acceptance (e.g. errorCode 720 = below minimum position amount).
+                If info IsNot Nothing AndAlso info.ErrorCode > 0 Then
+                    Dim msg = If(String.IsNullOrWhiteSpace(info.ErrorMessage),
+                                 $"eToro errorCode={info.ErrorCode}",
+                                 info.ErrorMessage)
+                    _logger.LogWarning("eToro order {Id} rejected post-submission: [{Code}] {Msg}",
+                                       order.ExternalOrderId, info.ErrorCode, msg)
+                    order.Status = OrderStatus.Rejected
+                    Await _orderRepo.UpdateOrderStatusAsync(order.Id, order.Status, order.ExternalOrderId)
+                    RaiseEvent OrderRejected(Me, New OrderRejectedEventArgs(order, msg))
+                    Return
+                End If
+
                 Dim pos = info?.Positions?.FirstOrDefault()
                 If pos IsNot Nothing Then
                     order.ExternalPositionId = pos.PositionId
-                    order.FillPrice = CDec(pos.OpenRate)
+                    order.FillPrice = CDec(pos.Rate)
                     order.FilledAt = DateTimeOffset.UtcNow
                     order.Status = OrderStatus.Filled
                     Await _orderRepo.UpdateOrderStatusAsync(order.Id, order.Status, order.ExternalOrderId)
@@ -197,10 +214,13 @@ Namespace TopStepTrader.Services.Trading
                                                          Optional cancel As CancellationToken = Nothing) As Task(Of Decimal?) _
             Implements IOrderService.TryGetOrderFillPriceAsync
             Try
-                Dim resp = Await _orderClient.SearchOrdersAsync(cancel)
-                Dim match = resp?.Orders?.FirstOrDefault(Function(o) o.Id = externalOrderId)
-                If match IsNot Nothing AndAlso match.AvgFillPrice.HasValue Then
-                    Return CDec(match.AvgFillPrice.Value)
+                ' Use the order-info endpoint: it returns the positions created by this specific
+                ' order with the correct fill price ("rate" field).  Polling the portfolio instead
+                ' would require matching positionId == orderId, which is never true.
+                Dim info = Await _orderClient.GetOrderInfoAsync(externalOrderId, cancel)
+                Dim pos = info?.Positions?.FirstOrDefault()
+                If pos IsNot Nothing Then
+                    Return CDec(pos.Rate)
                 End If
             Catch ex As Exception
                 _logger.LogWarning(ex, "Could not retrieve fill price for orderId={Id}", externalOrderId)
@@ -216,10 +236,15 @@ Namespace TopStepTrader.Services.Trading
             Try
                 Dim resp = Await _orderClient.SearchOrdersAsync(cancel)
                 If resp?.Success = True AndAlso resp.Orders IsNot Nothing Then
+                    ' eToro portfolio exposes p.InstrumentId.ToString() (e.g. "17") as o.ContractId.
+                    ' Callers pass the ticker symbol (e.g. "OIL"), so resolve the numeric form too.
+                    Dim numericInstrId = FavouriteContracts.TryGetBySymbol(contractId)?.InstrumentId.ToString()
                     Dim working = resp.Orders _
                         .Where(Function(o) o.Status = ApiStatusWorking AndAlso
-                                           String.Equals(o.ContractId, contractId,
-                                                         StringComparison.OrdinalIgnoreCase)) _
+                                           (String.Equals(o.ContractId, contractId,
+                                                          StringComparison.OrdinalIgnoreCase) OrElse
+                                            (numericInstrId IsNot Nothing AndAlso
+                                             String.Equals(o.ContractId, numericInstrId)))) _
                         .Select(Function(o) New Order With {
                             .ExternalOrderId = o.Id,
                             .ExternalPositionId = o.Id,
@@ -234,6 +259,75 @@ Namespace TopStepTrader.Services.Trading
                 _logger.LogWarning(ex, "GetLiveWorkingOrdersAsync failed for instrument {ContractId}", contractId)
             End Try
             Return Enumerable.Empty(Of Order)()
+        End Function
+
+        Public Async Function GetLivePositionSnapshotAsync(accountId As Long,
+                                                             contractId As String,
+                                                             Optional positionId As Long? = Nothing,
+                                                             Optional cancel As CancellationToken = Nothing) As Task(Of LivePositionSnapshot) _
+            Implements IOrderService.GetLivePositionSnapshotAsync
+            Try
+                Dim positions = Await _orderClient.GetPortfolioPositionsAsync(cancel)
+                Dim numericInstrId = FavouriteContracts.TryGetBySymbol(contractId)?.InstrumentId
+
+                ' Prefer exact positionId match; fall back to first position for the instrument.
+                Dim match As EToroPositionDto = Nothing
+                If positionId.HasValue Then
+                    match = positions.FirstOrDefault(Function(p) p.PositionId = positionId.Value)
+                End If
+                If match Is Nothing AndAlso numericInstrId.HasValue Then
+                    match = positions.FirstOrDefault(Function(p) p.InstrumentId = numericInstrId.Value)
+                End If
+                If match Is Nothing Then Return Nothing
+
+                Dim openedAt = DateTimeOffset.MinValue
+                Dim parsedDt As DateTimeOffset
+                If Not String.IsNullOrEmpty(match.OpenDateTime) AndAlso
+                   DateTimeOffset.TryParse(match.OpenDateTime, parsedDt) Then
+                    openedAt = parsedDt.ToUniversalTime()
+                End If
+
+                Return New LivePositionSnapshot With {
+                    .PositionId = match.PositionId,
+                    .UnrealizedPnlUsd = CDec(match.PnL),
+                    .OpenedAtUtc = openedAt,
+                    .IsBuy = match.IsBuy,
+                    .Amount = CDec(match.Amount)
+                }
+            Catch ex As Exception
+                _logger.LogWarning(ex, "GetLivePositionSnapshotAsync failed for {Contract}", contractId)
+                Return Nothing
+            End Try
+        End Function
+
+        Public Async Function FlattenContractAsync(accountId As Long,
+                                                    contractId As String,
+                                                    Optional cancel As CancellationToken = Nothing) As Task(Of Boolean) _
+            Implements IOrderService.FlattenContractAsync
+            Dim liveOrders = Await GetLiveWorkingOrdersAsync(accountId, contractId, cancel)
+            If Not liveOrders.Any() Then Return True
+
+            Dim allOk = True
+            For Each order In liveOrders
+                ' GetLiveWorkingOrdersAsync sets ExternalPositionId = ExternalOrderId = portfolio positionId
+                Dim posId = If(order.ExternalPositionId, order.ExternalOrderId)
+                If Not posId.HasValue Then Continue For
+                Try
+                    Dim resp = Await _orderClient.ClosePositionAsync(posId.Value, Nothing, cancel)
+                    If resp.Success Then
+                        _logger.LogInformation("FlattenContract: closed positionId={PosId} ({Contract})",
+                                               posId.Value, contractId)
+                    Else
+                        _logger.LogWarning("FlattenContract: close failed positionId={PosId}: {Msg}",
+                                           posId.Value, resp.ErrorMessage)
+                        allOk = False
+                    End If
+                Catch ex As Exception
+                    _logger.LogWarning(ex, "FlattenContract exception positionId={PosId}", posId)
+                    allOk = False
+                End Try
+            Next
+            Return allOk
         End Function
 
     End Class

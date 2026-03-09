@@ -20,6 +20,12 @@ Namespace TopStepTrader.Core.Models
     End Class
 
     Public Class BacktestTrade
+        ''' <summary>
+        ''' Groups all legs of a single position together.
+        ''' The initial entry and any scale-in entries share the same PositionGroupId.
+        ''' Metrics (win rate, avg P&amp;L) are computed per group, not per individual row.
+        ''' </summary>
+        Public Property PositionGroupId As Integer
         Public Property EntryTime As DateTimeOffset
         Public Property ExitTime As DateTimeOffset?
         Public Property Side As String = String.Empty

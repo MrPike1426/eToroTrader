@@ -18,10 +18,10 @@ Namespace TopStepTrader.Tests.Backtest
             Dim result = StrategyDefaults.TryGet("EMA/RSI Combined")
 
             Assert.NotNull(result)
-            Assert.Equal("50000", result.Capital)
-            Assert.Equal("4", result.Qty)
-            Assert.Equal("20", result.TakeProfitTicks)
-            Assert.Equal("10", result.StopLossTicks)
+            Assert.Equal("200", result.Capital)
+            Assert.Equal("1", result.Qty)
+            Assert.Equal("4.0", result.TakeProfitPct)
+            Assert.Equal("1.5", result.StopLossPct)
         End Sub
 
         ' ══════════════════════════════════════════════════════════════════
@@ -68,7 +68,7 @@ Namespace TopStepTrader.Tests.Backtest
             Dim result = StrategyDefaults.TryGet("ema/rsi combined")
 
             Assert.NotNull(result)
-            Assert.Equal("50000", result.Capital)
+            Assert.Equal("200", result.Capital)
         End Sub
 
         <Fact>
@@ -76,7 +76,7 @@ Namespace TopStepTrader.Tests.Backtest
             Dim result = StrategyDefaults.TryGet("EMA/RSI COMBINED")
 
             Assert.NotNull(result)
-            Assert.Equal("4", result.Qty)
+            Assert.Equal("1", result.Qty)
         End Sub
 
         ' ══════════════════════════════════════════════════════════════════

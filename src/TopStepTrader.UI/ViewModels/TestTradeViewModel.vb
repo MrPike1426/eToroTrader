@@ -1,5 +1,6 @@
 Imports System.Collections.ObjectModel
 Imports System.Windows
+Imports TopStepTrader.API.Http
 Imports TopStepTrader.Core.Enums
 Imports TopStepTrader.Core.Events
 Imports TopStepTrader.Core.Interfaces
@@ -23,13 +24,16 @@ Namespace TopStepTrader.UI.ViewModels
         Private ReadOnly _orderService As IOrderService
         Private ReadOnly _accountService As IAccountService
         Private ReadOnly _marketDataService As IMarketDataService
+        Private ReadOnly _historyClient As HistoryClient
 
         Public Sub New(orderService As IOrderService,
                        accountService As IAccountService,
-                       marketDataService As IMarketDataService)
+                       marketDataService As IMarketDataService,
+                       historyClient As HistoryClient)
             _orderService = orderService
             _accountService = accountService
             _marketDataService = marketDataService
+            _historyClient = historyClient
 
             AddHandler _orderService.OrderFilled, AddressOf OnTestOrderFilled
             AddHandler _orderService.OrderRejected, AddressOf OnTestOrderRejected
@@ -45,10 +49,6 @@ Namespace TopStepTrader.UI.ViewModels
             StopStrategyCommand = New RelayCommand(AddressOf StopStrategy, Function() IsStrategyRunning)
 
             CreateBracketCommand = New RelayCommand(AddressOf CreateBracket)
-
-            ' Set default Risk/Reward as requested
-            TestTradeStopLoss = "50"
-            TestTradeTakeProfit = "25"
 
             ClearDebugCommand = New RelayCommand(AddressOf ClearDebug)
         End Sub
@@ -119,6 +119,16 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
+        Private _testTradeInstrumentId As Integer = 0
+        Public Property TestTradeInstrumentId As Integer
+            Get
+                Return _testTradeInstrumentId
+            End Get
+            Set(value As Integer)
+                SetProperty(_testTradeInstrumentId, value)
+            End Set
+        End Property
+
         Private _testTradeContractLongId As String = String.Empty
         Public Property TestTradeContractLongId As String
             Get
@@ -150,7 +160,17 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
-        Private _testTradeStopLoss As String = "60"
+        Private _testTradeAmount As String = "500"
+        Public Property TestTradeAmount As String
+            Get
+                Return _testTradeAmount
+            End Get
+            Set(value As String)
+                SetProperty(_testTradeAmount, value)
+            End Set
+        End Property
+
+        Private _testTradeStopLoss As String = "10"
         Public Property TestTradeStopLoss As String
             Get
                 Return _testTradeStopLoss
@@ -160,7 +180,7 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
-        Private _testTradeTakeProfit As String = "30"
+        Private _testTradeTakeProfit As String = "25"
         Public Property TestTradeTakeProfit As String
             Get
                 Return _testTradeTakeProfit
@@ -170,7 +190,19 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
-        Private _testTradeStatus As String = "Select a contract and click Analyse Trend"
+        Public ReadOnly Property AvailableLeverages As Integer() = {1, 2, 5, 10}
+
+        Private _testTradeLeverage As Integer = 1
+        Public Property TestTradeLeverage As Integer
+            Get
+                Return _testTradeLeverage
+            End Get
+            Set(value As Integer)
+                SetProperty(_testTradeLeverage, value)
+            End Set
+        End Property
+
+        Private _testTradeStatus As String
         Public Property TestTradeStatus As String
             Get
                 Return _testTradeStatus
@@ -509,9 +541,9 @@ Namespace TopStepTrader.UI.ViewModels
                 Return
             End If
 
-            Dim qty As Integer = 1
-            Integer.TryParse(_testTradeQuantity, qty)
-            If qty <= 0 Then qty = 1
+            Dim amountVal As Decimal = 500D
+            Decimal.TryParse(_testTradeAmount, amountVal)
+            If amountVal <= 0 Then amountVal = 500D
 
             Dim sideLabel = If(side = OrderSide.Buy, "BUY", "SELL")
 
@@ -521,14 +553,64 @@ Namespace TopStepTrader.UI.ViewModels
             End SyncLock
 
             Try
-                Dispatch(Sub() TestTradeStatus = $"📤 Placing Market {sideLabel} for {contractId}...")
+                Dispatch(Sub() TestTradeStatus = $"📤 Placing ${amountVal} {sideLabel} for {contractId}...")
+
+                ' ── Resolve SL / TP absolute rates from % of investment ───────────────
+                ' slPct / tpPct are entered as percentages (e.g. 10 = 10% of amount).
+                ' Formula: offset = pct% × refPrice ÷ pointValue
+                ' Example: $500 OIL @ 74.60 — SL 10% → offset 7.46 → slRate 67.14 (~$50)
+                '                           — TP 25% → offset 18.65 → tpRate 93.25 (~$125)
+                Dim slPct As Decimal = 0
+                Dim tpPct As Decimal = 0
+                Dim slRate As Decimal? = Nothing
+                Dim tpRate As Decimal? = Nothing
+
+                If Decimal.TryParse(_testTradeStopLoss, slPct) AndAlso slPct > 0 AndAlso
+                   Decimal.TryParse(_testTradeTakeProfit, tpPct) AndAlso tpPct > 0 Then
+
+                    Dim refPrice As Decimal = _lastKnownPrice
+                    If refPrice <= 0 Then
+                        Try
+                            Dim bars = Await _historyClient.RetrieveBarsAsync(
+                                _testTradeInstrumentId.ToString(), 1, 1, 1)
+                            If bars?.Bars IsNot Nothing AndAlso bars.Bars.Count > 0 Then
+                                refPrice = CDec(bars.Bars.Last().Close)
+                            End If
+                        Catch
+                            ' Price fetch failed — order will be placed without SL/TP
+                        End Try
+                    End If
+
+                    If refPrice > 0 Then
+                        Dim fav = FavouriteContracts.TryGetBySymbol(contractId)
+                        Dim ptVal = If(fav IsNot Nothing, fav.PointValue, 1D)
+                        Dim slOffset = (slPct / 100D) * (refPrice / ptVal)
+                        Dim tpOffset = (tpPct / 100D) * (refPrice / ptVal)
+                        If side = OrderSide.Buy Then
+                            slRate = Math.Round(refPrice - slOffset, 4)
+                            tpRate = Math.Round(refPrice + tpOffset, 4)
+                        Else
+                            slRate = Math.Round(refPrice + slOffset, 4)
+                            tpRate = Math.Round(refPrice - tpOffset, 4)
+                        End If
+                        Dim slDollars = Math.Round(slPct / 100D * amountVal, 2)
+                        Dim tpDollars = Math.Round(tpPct / 100D * amountVal, 2)
+                        Dispatch(Sub() AddDebugMessage($"SL/TP: ref={refPrice:F4}  SL={slRate:F4} (~${slDollars})  TP={tpRate:F4} (~${tpDollars})"))
+                    Else
+                        Dispatch(Sub() AddDebugMessage("⚠ Could not resolve price — order placed without SL/TP"))
+                    End If
+                End If
 
                 Dim order As New Order With {
                     .AccountId = _selectedAccount.Id,
                     .ContractId = contractId,
+                    .InstrumentId = _testTradeInstrumentId,
                     .Side = side,
                     .OrderType = OrderType.Market,
-                    .Quantity = qty,
+                    .Amount = amountVal,
+                    .Leverage = If(_testTradeLeverage > 0, _testTradeLeverage, 1),
+                    .StopLossRate = slRate,
+                    .TakeProfitRate = tpRate,
                     .Status = OrderStatus.Pending,
                     .PlacedAt = DateTimeOffset.UtcNow,
                     .Notes = $"Test Trade — {sideLabel} [{correlationId}]"
@@ -828,14 +910,13 @@ Namespace TopStepTrader.UI.ViewModels
         Private Sub UpdateTestTradeContractDisplay()
             Dim c = _testTradeSelectedContract
             If c IsNot Nothing Then
-                ' Column 2 TextBlock: full API contract ID (e.g. CON.F.US.MES.H26)
                 TestTradeContractLongId = c.Id
-                ' Results panel "CONTRACT" heading: friendly name (e.g. MESH26 — Micro S&P 500)
                 TestTradeContractDisplay = If(Not String.IsNullOrWhiteSpace(c.FriendlyName),
                                               c.FriendlyName, c.Id)
             ElseIf Not String.IsNullOrWhiteSpace(_testTradeContractId) Then
                 TestTradeContractLongId = _testTradeContractId
-                TestTradeContractDisplay = _testTradeContractId
+                Dim fav = FavouriteContracts.TryGetBySymbol(_testTradeContractId)
+                TestTradeContractDisplay = If(fav IsNot Nothing, fav.Name, _testTradeContractId)
             End If
         End Sub
 
@@ -889,9 +970,8 @@ Namespace TopStepTrader.UI.ViewModels
                     .Status = OrderStatus.Filled
                 }
 
-                Dim bracketTask As Task = Task.Run(Function() PlaceBracketsAsync(entryOrder, fillPrice))
-                Dispatch(Sub() AddDebugMessage($"📡 Position update: filled @ {fillPrice}. Placing brackets..."))
-                Dispatch(Sub() TestTradeStatus = $"✅ Filled @ {fillPrice} via SignalR. Brackets sent.")
+                Dispatch(Sub() AddDebugMessage($"📡 Position filled @ {fillPrice}"))
+                Dispatch(Sub() TestTradeStatus = $"✅ Filled @ {fillPrice}")
             End If
         End Sub
 
