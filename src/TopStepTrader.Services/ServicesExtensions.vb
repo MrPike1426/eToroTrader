@@ -23,6 +23,9 @@ Namespace TopStepTrader.Services
             ' BacktestRepository not yet registered there — add it here as Scoped
             services.AddScoped(Of BacktestRepository)()
 
+            ' ── API key store — Singleton: one file-backed store for the session lifetime
+            services.AddSingleton(Of IApiKeyStore, ApiKeyStore)()
+
             ' ── Auth
             services.AddSingleton(Of IAuthService, AuthService)()
 

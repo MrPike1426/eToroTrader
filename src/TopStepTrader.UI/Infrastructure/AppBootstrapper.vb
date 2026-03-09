@@ -62,6 +62,7 @@ Namespace TopStepTrader.UI.Infrastructure
                         services.AddTransient(Of SniperViewModel)()
                         services.AddTransient(Of HydraViewModel)()
                         services.AddTransient(Of CryptoJoeViewModel)()
+                        services.AddTransient(Of ApiKeysViewModel)()
 
                         ' Views — Transient; resolved from per-view scope inside Locator
                         services.AddTransient(Of DashboardView)()
@@ -77,6 +78,7 @@ Namespace TopStepTrader.UI.Infrastructure
                         services.AddTransient(Of ISniperExecutionEngine, SniperExecutionEngine)()
                         services.AddTransient(Of HydraView)()
                         services.AddTransient(Of CryptoJoeView)()
+                        services.AddTransient(Of ApiKeysView)()
 
                         ' Main window — Singleton (one window per app session)
                         services.AddSingleton(Of MainWindow)()

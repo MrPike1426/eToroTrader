@@ -98,6 +98,12 @@ Namespace TopStepTrader.UI.ViewModels
             End Get
         End Property
 
+        Public ReadOnly Property ApiKeysView As Views.ApiKeysView
+            Get
+                Return Resolve(Of Views.ApiKeysView)("ApiKeys")
+            End Get
+        End Property
+
         Public Sub Dispose() Implements IDisposable.Dispose
             If Not _disposed Then
                 For Each scope In _scopes.Values

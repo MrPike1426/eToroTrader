@@ -78,6 +78,8 @@ Namespace TopStepTrader.UI
                     MainContent.Content = cryptoJoeView
                 Case "Settings"
                     MainContent.Content = _viewModelLocator.SettingsView
+                Case "ApiKeys"
+                    MainContent.Content = _viewModelLocator.ApiKeysView
             End Select
         End Sub
 

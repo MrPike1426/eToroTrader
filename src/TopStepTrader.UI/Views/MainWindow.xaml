@@ -29,6 +29,7 @@
                 <Button Content="🐙  Hydra"        Tag="Hydra"       Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
                 <Button Content="☕  CryptoJoe"    Tag="CryptoJoe"   Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
                 <Button Content="🎯  Sniper"       Tag="Sniper"      Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
+                <Button Content="🔑  API Keys"    Tag="ApiKeys"     Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
                 <Button Content="🔬  Backtest"     Tag="Backtest"    Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
                 <Button Content="📋  Orders"       Tag="Orders"      Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
                 <Button Content="🧪  Test Trade"   Tag="TestTrade"   Click="NavButton_Click" Style="{StaticResource NavButtonStyle}"/>
