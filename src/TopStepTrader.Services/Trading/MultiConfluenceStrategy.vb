@@ -24,6 +24,8 @@ Namespace TopStepTrader.Services.Trading
         Public Property CloudEdgeSl As Decimal? = Nothing
         ''' <summary>Single-line summary of all indicator values for the execution log.</summary>
         Public Property StatusLine As String = String.Empty
+        ''' <summary>Raw ADX(14) value at bar-check time. Forwarded to ConfidenceUpdatedEventArgs so the UI card can display it.</summary>
+        Public Property AdxValue As Single = 0F
     End Class
 
     ''' <summary>
@@ -154,6 +156,7 @@ Namespace TopStepTrader.Services.Trading
 
             result.BullScore = CInt(longCount / 7 * 100)
             result.BearScore = CInt(shortCount / 7 * 100)
+            result.AdxValue = adxNow
 
             ' ── Build diagnostic status line ───────────────────────────────────────
             result.StatusLine =

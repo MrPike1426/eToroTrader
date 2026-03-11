@@ -53,6 +53,19 @@ Namespace TopStepTrader.API.Http
         End Function
 
         ''' <summary>
+        ''' Updates SL and/or TP on an already-open position.
+        ''' PUT /api/v1/trading/execution/demo/positions/{positionId}
+        ''' </summary>
+        Public Function EditPositionAsync(
+            positionId As Long,
+            request As EditPositionRequest,
+            Optional cancel As CancellationToken = Nothing) As Task(Of PlaceOrderResponse)
+
+            Dim endpoint = $"{_settings.BaseUrl}/api/v1/trading/execution/demo/positions/{positionId}"
+            Return PutAsync(Of EditPositionRequest, PlaceOrderResponse)(endpoint, request, cancel)
+        End Function
+
+        ''' <summary>
         ''' Closes a position fully or partially.
         ''' POST /api/v1/trading/execution/demo/market-close-orders/positions/{positionId}
         ''' </summary>

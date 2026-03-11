@@ -15,6 +15,18 @@ Namespace TopStepTrader.Core.Models
         Public Property IsBuy As Boolean
         ''' <summary>Cash amount invested, as returned by the API.</summary>
         Public Property Amount As Decimal
+        ''' <summary>The rate (price) at which the position was opened, as returned by the broker.</summary>
+        Public Property OpenRate As Decimal
+        ''' <summary>
+        ''' Total units across all open positions for this contract, aggregated by OrderService.
+        ''' Used by the engine to calculate P&amp;L: (currentPrice − OpenRate) × Units × direction.
+        ''' The eToro portfolio API does not return a pnL field, so P&amp;L must be derived this way.
+        ''' </summary>
+        Public Property Units As Decimal
+        ''' <summary>Leverage of the representative (first) position.</summary>
+        Public Property Leverage As Integer
+        ''' <summary>Number of open positions aggregated into this snapshot.</summary>
+        Public Property PositionCount As Integer
     End Class
 
 End Namespace

@@ -97,6 +97,18 @@ Namespace TopStepTrader.Services.Trading
         Private Const ScaleInBullThreshold As Integer = 80
         Private Const ScaleInBearThreshold As Integer = 20
 
+        ' ── Stepped trailing bracket constants ──────────────────────────────────────
+        Private Shared ReadOnly TrailTriggerPct As Decimal = 2.0D
+        Private Shared ReadOnly TrailStepPct As Decimal = 0.5D
+        Private Shared ReadOnly TrailSlOffset As Decimal = 1.5D
+        Private Shared ReadOnly TrailDefaultTpAbove As Decimal = 2.0D
+
+        ' ── Stepped trailing bracket state (reset per position) ─────────────────────
+        Private _trailLastSteps As Integer = -1
+        Private _trailTpAbove As Decimal = 2.0D
+        Private _trailTrackedSlPrice As Decimal = 0D
+        Private _trailTrackedTpPrice As Decimal = 0D
+
         Public Sub New(ingestionService As BarIngestionService,
                        orderService As IOrderService,
                        riskGuard As IRiskGuardService,
@@ -134,6 +146,7 @@ Namespace TopStepTrader.Services.Trading
             _scaleInTradeCount = 0
             _currentAtrValue = 0D
             _currentEma21 = 0D
+            ResetTrailState()
             _running = True
             _lastCheckedBarCount = 0
             _cts = New CancellationTokenSource()
@@ -151,7 +164,19 @@ Namespace TopStepTrader.Services.Trading
                                  _positionOpen = True
                                  _openPositionId = snapshot.PositionId
                                  _positionOpenedAt = DateTimeOffset.UtcNow.AddSeconds(-61)
-                                 Log($"⚠️  Existing open position detected on startup (positionId={snapshot.PositionId}, P&L={snapshot.UnrealizedPnlUsd:+0.00;-0.00}) — monitoring without placing new entry.")
+                                 If snapshot.OpenRate > 0D Then
+                                         _lastEntryPrice = snapshot.OpenRate
+                                         _lastEntrySide = If(snapshot.IsBuy, OrderSide.Buy, OrderSide.Sell)
+                                     End If
+                                     _currentTrendSide = If(snapshot.IsBuy, OrderSide.Buy, OrderSide.Sell)
+                                     _lastFinalAmount = snapshot.Amount
+                                     _lastLeverage = snapshot.Leverage
+                                     _openTradeCount = snapshot.PositionCount
+                                     Dim startupSide = If(snapshot.IsBuy, OrderSide.Buy, OrderSide.Sell)
+                                     RaiseEvent TradeOpened(Me, New TradeOpenedEventArgs(startupSide, strategy.ContractId, 100,
+                                         snapshot.OpenedAtUtc, Nothing, snapshot.PositionId,
+                                         snapshot.OpenedAtUtc, snapshot.Amount, snapshot.Leverage, snapshot.OpenRate))
+                                     Log($"⚠️  Existing {snapshot.PositionCount} position(s) detected on startup (positionId={snapshot.PositionId}, entry={snapshot.OpenRate:F4}, units={snapshot.Units:F3}) — monitoring without placing new entry. Stepped trail active from ≥2% profit.")
                              Else
                                  Log($"✓ No existing positions for {strategy.ContractId} — ready to trade.")
                              End If
@@ -272,6 +297,11 @@ Namespace TopStepTrader.Services.Trading
             Dim isNewBar = (barPeriodStart > _lastBarTimestamp)
             If isNewBar Then _lastBarTimestamp = barPeriodStart
 
+            Dim barAgeMins = (DateTimeOffset.UtcNow - lastBar.Timestamp).TotalMinutes
+            Dim barIsStale = barAgeMins > _strategy.TimeframeMinutes * 3.0
+
+            If Not barIsStale Then
+
             Select Case _strategy.Condition
                 Case StrategyConditionType.FullCandleOutsideBands,
                      StrategyConditionType.CloseOutsideBands
@@ -308,16 +338,14 @@ Namespace TopStepTrader.Services.Trading
                     Dim rsi = TechnicalIndicators.RSI(closes, _strategy.IndicatorPeriod)
                     Dim rsiVal = TechnicalIndicators.LastValid(rsi)
 
-                    If _strategy.Condition = StrategyConditionType.RSIOversold Then
-                        If _strategy.GoLongWhenBelowBands AndAlso rsiVal < 30 Then
-                            Log($"✅ RSI oversold! RSI={rsiVal:F1} < 30")
-                            side = OrderSide.Buy
-                        ElseIf _strategy.GoShortWhenAboveBands AndAlso rsiVal > 70 Then
-                            Log($"✅ RSI overbought! RSI={rsiVal:F1} > 70")
-                            side = OrderSide.Sell
-                        Else
-                            Log($"Bar checked — RSI={rsiVal:F1} | no signal ({remStr})")
-                        End If
+                    If _strategy.GoLongWhenBelowBands AndAlso rsiVal < 30 Then
+                        Log($"✅ RSI oversold! RSI={rsiVal:F1} < 30")
+                        side = OrderSide.Buy
+                    ElseIf _strategy.GoShortWhenAboveBands AndAlso rsiVal > 70 Then
+                        Log($"✅ RSI overbought! RSI={rsiVal:F1} > 70")
+                        side = OrderSide.Sell
+                    Else
+                        Log($"Bar checked — RSI={rsiVal:F1} | no signal ({remStr})")
                     End If
 
                 Case StrategyConditionType.EMACrossAbove, StrategyConditionType.EMACrossBelow
@@ -387,7 +415,7 @@ Namespace TopStepTrader.Services.Trading
                     Dim atrVals = TechnicalIndicators.ATR(highs, lows, closes, 14)
                     _currentAtrValue = CDec(TechnicalIndicators.LastValid(atrVals))
 
-                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(CInt(upPct), CInt(downPct), adxGatePassed))
+                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(CInt(upPct), CInt(downPct), adxGatePassed, CSng(adxNow), lastClose))
 
                     If Not adxGatePassed Then
                         Log($"Bar checked — ADX={adxNow:F1} < 25 (ranging market) — signal suppressed | EMA/RSI: UP={upPct:F0}% DOWN={downPct:F0}% | ATR={_currentAtrValue:F4} | {remStr}")
@@ -408,7 +436,7 @@ Namespace TopStepTrader.Services.Trading
                     _currentAtrValue = mcResult.AtrValue
                     _mcCloudSlPrice = Nothing
 
-                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(mcResult.BullScore, mcResult.BearScore))
+                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(mcResult.BullScore, mcResult.BearScore, adxValue:=mcResult.AdxValue, lastClose:=CDec(lastBar.Close)))
 
                     If mcResult.Side.HasValue Then
                         Dim mcSide = mcResult.Side.Value
@@ -430,7 +458,7 @@ Namespace TopStepTrader.Services.Trading
                     Dim lultAtrVals = TechnicalIndicators.ATR(highs, lows, closes, 14)
                     _currentAtrValue = CDec(TechnicalIndicators.LastValid(lultAtrVals))
                     Dim lultResult = LultDivergenceStrategy.Evaluate(highs, lows, closes, lultOpens)
-                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(lultResult.BullScore, lultResult.BearScore))
+                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(lultResult.BullScore, lultResult.BearScore, lastClose:=CDec(lastBar.Close)))
                     If Not lultResult.IsInTradingWindow Then
                         Log($"Bar checked — LULT (OUT of EST window): {lultResult.StatusLine} | {remStr}")
                     ElseIf lultResult.Side.HasValue Then
@@ -500,6 +528,8 @@ Namespace TopStepTrader.Services.Trading
                 End If
             End If
 
+            End If ' Not barIsStale
+
             If _positionOpen Then
                 Dim secondsSinceEntry = (DateTimeOffset.UtcNow - _positionOpenedAt).TotalSeconds
                 If secondsSinceEntry < 60 Then
@@ -512,9 +542,14 @@ Namespace TopStepTrader.Services.Trading
                             _openPositionId = snapshot.PositionId
                             Log($"🔗 eToro positionId resolved: {snapshot.PositionId}")
                         End If
-                        _lastApiPnl = snapshot.UnrealizedPnlUsd
+                        ' eToro portfolio API does not return a pnL field — calculate from
+                        ' current bar close price across all aggregated position units.
+                        Dim calculatedPnl = If(snapshot.Units > 0D,
+                            Math.Round((CDec(lastBar.Close) - snapshot.OpenRate) * snapshot.Units *
+                                       If(snapshot.IsBuy, 1D, -1D), 2), 0D)
+                        _lastApiPnl = calculatedPnl
                         RaiseEvent PositionSynced(Me, New PositionSyncedEventArgs(
-                            snapshot.PositionId, snapshot.UnrealizedPnlUsd, snapshot.OpenedAtUtc))
+                            snapshot.PositionId, calculatedPnl, snapshot.OpenedAtUtc))
                     Else
                         Dim closedCount = Math.Max(1, _openTradeCount)
                         Log($"⚠️  API reconciliation: no open positions for {_strategy.ContractId} — " &
@@ -529,8 +564,17 @@ Namespace TopStepTrader.Services.Trading
                         Next
                         _openTradeCount = 0
                         _lastApiPnl = 0D
+                        ResetTrailState()
                     End If
                 End If
+            End If
+
+            ' ── Stepped trailing bracket — engine-tracked free-ride SL/TP ────────────
+            ' Runs after the broker reconciliation so a just-detected broker close does
+            ' not trigger a double-flatten.  Returns True when it closes the position.
+            If _positionOpen AndAlso _lastEntryPrice > 0D Then
+                Dim trailClosed = Await ApplySteppedTrailAsync(CDec(lastBar.Close), ct)
+                If trailClosed Then Return
             End If
 
             Dim riskAccount As New Account With {.Id = _strategy.AccountId}
@@ -540,7 +584,9 @@ Namespace TopStepTrader.Services.Trading
                 Return
             End If
 
-            If _strategy.Condition = StrategyConditionType.EmaRsiWeightedScore Then
+            If barIsStale Then
+                Log($"⏸  Market closed — last bar is {CInt(barAgeMins)} min old (limit: {_strategy.TimeframeMinutes * 3} min) — monitoring positions only. ({remStr})")
+            ElseIf _strategy.Condition = StrategyConditionType.EmaRsiWeightedScore Then
                 Await EvaluateConfidenceActionsAsync(rawUpPct, rawDownPct, side, CDec(lastBar.Close), isNewBar, ct)
             Else
                 If side.HasValue Then
@@ -675,6 +721,9 @@ Namespace TopStepTrader.Services.Trading
                 Return
             End Try
 
+            ' New position — reset stepped trailing state so the fresh entry is tracked cleanly.
+            ResetTrailState()
+
             _lastEntryPrice = priceUsed
             _lastEntrySide = side
             _lastConfidencePct = _pendingConfidencePct
@@ -710,9 +759,9 @@ Namespace TopStepTrader.Services.Trading
 
             Dim ok = Await _orderService.FlattenContractAsync(_strategy.AccountId, _strategy.ContractId, ct)
             If ok Then
-                Log($"✅ Flatten complete — {_strategy.ContractId} closed. Entering {newSide}...")
+                Log($"✅ Flatten complete — {_strategy.ContractId} closed. Waiting for next {newSide} signal...")
             Else
-                Log($"⚠️  Flatten partially failed for {_strategy.ContractId} — check positions manually. Continuing with {newSide}...")
+                Log($"⚠️  Flatten partially failed for {_strategy.ContractId} — check positions manually. Waiting for next {newSide} signal...")
             End If
 
             Dim reversalClosedCount = If(_positionOpen, Math.Max(1, _openTradeCount), 0)
@@ -743,6 +792,7 @@ Namespace TopStepTrader.Services.Trading
             _reversalConfirmCount = 0
             _extremeConfidenceDurationCount = 0
             _scaleInTradeCount = 0
+            ResetTrailState()
         End Function
 
         ' ── Confidence-driven scale-in / neutral-exit (EMA/RSI strategy) ─────────
@@ -975,7 +1025,122 @@ Namespace TopStepTrader.Services.Trading
             _currentTrendSide = Nothing
             _reversalCandidateSide = Nothing
             _reversalConfirmCount = 0
+            ResetTrailState()
         End Function
+
+        ' ── Stepped trailing bracket methods ──────────────────────────────────────
+
+        ''' <summary>
+        ''' Engine-side stepped trailing bracket (free-ride SL/TP).
+        ''' Activates when profitPct ≥ 2.0%.  Advances tracked SL/TP in 0.5% steps.
+        ''' Closes the position and fires TradeClosed when the current bar price breaches
+        ''' the tracked SL or reaches the tracked TP.
+        ''' Returns True when the position was closed this tick so the caller can return early.
+        ''' </summary>
+        Private Async Function ApplySteppedTrailAsync(currentPrice As Decimal,
+                                                      ct As CancellationToken) As Task(Of Boolean)
+            If _lastEntryPrice <= 0D Then Return False
+
+            Dim profitPct As Decimal =
+                If(_lastEntrySide = OrderSide.Buy,
+                   (currentPrice - _lastEntryPrice) / _lastEntryPrice * 100D,
+                   (_lastEntryPrice - currentPrice) / _lastEntryPrice * 100D)
+
+            If _trailLastSteps >= 0 Then
+                Dim slBreached = If(_lastEntrySide = OrderSide.Buy,
+                                    currentPrice <= _trailTrackedSlPrice,
+                                    currentPrice >= _trailTrackedSlPrice)
+                Dim tpReached = (_trailTrackedTpPrice > 0D) AndAlso
+                                If(_lastEntrySide = OrderSide.Buy,
+                                   currentPrice >= _trailTrackedTpPrice,
+                                   currentPrice <= _trailTrackedTpPrice)
+
+                If slBreached OrElse tpReached Then
+                    Dim reason = If(slBreached, "Trail SL", "Trail TP")
+                    Log($"🛑 {reason} HIT — price={currentPrice:F4} " &
+                        $"SL={_trailTrackedSlPrice:F4} TP={_trailTrackedTpPrice:F4} " &
+                        $"profit={profitPct:F2}% — closing position")
+                    Await _orderService.FlattenContractAsync(_strategy.AccountId, _strategy.ContractId, ct)
+                    Dim closedCount = Math.Max(1, _openTradeCount)
+                    Dim closePnl = _lastApiPnl
+                    For i As Integer = 1 To closedCount
+                        RaiseEvent TradeClosed(Me, New TradeClosedEventArgs(reason, closePnl))
+                        closePnl = 0D
+                    Next
+                    _positionOpen = False
+                    _openPositionId = Nothing
+                    _openTradeCount = 0
+                    _positionOpenedAt = DateTimeOffset.MinValue
+                    _lastApiPnl = 0D
+                    ResetTrailState()
+                    Return True
+                End If
+            End If
+
+            If profitPct < TrailTriggerPct Then Return False
+
+            Dim steps = CInt(Math.Floor(CDbl(profitPct - TrailTriggerPct) / CDbl(TrailStepPct)))
+            Dim steppedProfit = TrailTriggerPct + steps * TrailStepPct
+
+            If _trailLastSteps = -1 Then
+                If _lastTpPrice > 0D Then
+                    Dim existingTpPct As Decimal =
+                        If(_lastEntrySide = OrderSide.Buy,
+                           (_lastTpPrice - _lastEntryPrice) / _lastEntryPrice * 100D,
+                           (_lastEntryPrice - _lastTpPrice) / _lastEntryPrice * 100D)
+                    Dim computed = existingTpPct - steppedProfit
+                    _trailTpAbove = If(computed > 0D, computed, TrailDefaultTpAbove)
+                Else
+                    _trailTpAbove = TrailDefaultTpAbove
+                End If
+                _trailLastSteps = steps
+                UpdateTrailLevels(steppedProfit)
+                Log($"🔰 TRAIL ARMED — profit={profitPct:F2}% step={steps} " &
+                    $"steppedProfit={steppedProfit:F2}% " &
+                    $"SL={_trailTrackedSlPrice:F4} (+{steppedProfit - TrailSlOffset:F2}%) " &
+                    $"TP={_trailTrackedTpPrice:F4} (+{steppedProfit + _trailTpAbove:F2}%)")
+                Return False
+            End If
+
+            If steps <= _trailLastSteps Then Return False
+
+            _trailLastSteps = steps
+            UpdateTrailLevels(steppedProfit)
+            Log($"⬆  TRAIL STEP {steps} — profit={profitPct:F2}% " &
+                $"steppedProfit={steppedProfit:F2}% " &
+                $"SL={_trailTrackedSlPrice:F4} (+{steppedProfit - TrailSlOffset:F2}%) " &
+                $"TP={_trailTrackedTpPrice:F4} (+{steppedProfit + _trailTpAbove:F2}%)")
+            Return False
+        End Function
+
+        ''' <summary>
+        ''' Recomputes the tracked SL and TP absolute prices from the latest stepped profit level.
+        ''' Never loosens: for Long, prices only increase; for Short, prices only decrease.
+        ''' </summary>
+        Private Sub UpdateTrailLevels(steppedProfit As Decimal)
+            Dim slProfitPct = steppedProfit - TrailSlOffset
+            Dim tpProfitPct = steppedProfit + _trailTpAbove
+
+            If _lastEntrySide = OrderSide.Buy Then
+                Dim newSl = Math.Round(_lastEntryPrice * (1D + slProfitPct / 100D), 4)
+                Dim newTp = Math.Round(_lastEntryPrice * (1D + tpProfitPct / 100D), 4)
+                _trailTrackedSlPrice = If(_trailTrackedSlPrice = 0D, newSl, Math.Max(_trailTrackedSlPrice, newSl))
+                _trailTrackedTpPrice = If(_trailTrackedTpPrice = 0D, newTp, Math.Max(_trailTrackedTpPrice, newTp))
+            Else
+                Dim newSl = Math.Round(_lastEntryPrice * (1D - slProfitPct / 100D), 4)
+                Dim newTp = Math.Round(_lastEntryPrice * (1D - tpProfitPct / 100D), 4)
+                _trailTrackedSlPrice = If(_trailTrackedSlPrice = 0D, newSl, Math.Min(_trailTrackedSlPrice, newSl))
+                _trailTrackedTpPrice = If(_trailTrackedTpPrice = 0D, newTp, Math.Min(_trailTrackedTpPrice, newTp))
+            End If
+        End Sub
+
+        ''' <summary>Resets all stepped trailing state. Called on position open, close, reversal, and flatten.</summary>
+        Private Sub ResetTrailState()
+            _trailLastSteps = -1
+            _trailTpAbove = TrailDefaultTpAbove
+            _trailTrackedSlPrice = 0D
+            _trailTrackedTpPrice = 0D
+        End Sub
 
         Private Sub Log(message As String)
             Dim timestamped = $"{DateTime.Now:HH:mm:ss}  {message}"

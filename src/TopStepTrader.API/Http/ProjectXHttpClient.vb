@@ -102,6 +102,38 @@ Namespace TopStepTrader.API.Http
             Return Await ReadResponseAsync(Of TResponse)(httpResponse, endpoint, cancel)
         End Function
 
+        ''' <summary>Authenticated, rate-limited PUT with JSON body (used to edit open positions).</summary>
+        Protected Async Function PutAsync(Of TRequest, TResponse)(
+            endpoint As String,
+            request As TRequest,
+            Optional cancel As CancellationToken = Nothing) As Task(Of TResponse)
+
+            Await RateLimiter.WaitForGeneralSlotAsync(cancel)
+
+            Dim json = JsonSerializer.Serialize(request)
+            Logger.LogDebug("PUT {Endpoint} → {Body}", endpoint, json)
+            Try : DebugLog.Log($"PUT {endpoint} → {json}") : Catch : End Try
+
+            Dim httpRequest = New HttpRequestMessage(HttpMethod.Put, endpoint) With {
+                .Content = New StringContent(json, Encoding.UTF8, "application/json")
+            }
+            AddEToroHeaders(httpRequest)
+
+            Dim httpResponse = Await HttpClient.SendAsync(httpRequest, cancel)
+
+            If httpResponse.StatusCode = Net.HttpStatusCode.TooManyRequests Then
+                Logger.LogWarning("Rate limit hit on {Endpoint}, backing off 5s", endpoint)
+                Await Task.Delay(5000, cancel)
+                Dim retryReq = New HttpRequestMessage(HttpMethod.Put, endpoint) With {
+                    .Content = New StringContent(json, Encoding.UTF8, "application/json")
+                }
+                AddEToroHeaders(retryReq)
+                httpResponse = Await HttpClient.SendAsync(retryReq, cancel)
+            End If
+
+            Return Await ReadResponseAsync(Of TResponse)(httpResponse, endpoint, cancel)
+        End Function
+
         ''' <summary>Authenticated, rate-limited DELETE (used to cancel pending orders).</summary>
         Protected Async Function DeleteAsync(Of TResponse)(
             endpoint As String,

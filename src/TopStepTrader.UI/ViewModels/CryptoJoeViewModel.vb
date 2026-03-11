@@ -236,7 +236,7 @@ Namespace TopStepTrader.UI.ViewModels
                                      assetVm As HydraAssetViewModel)
             AddHandler engine.ConfidenceUpdated,
                 Sub(s As Object, e As ConfidenceUpdatedEventArgs)
-                    Dispatch(Sub() assetVm.ApplyConfidence(e.UpPct, e.DownPct, e.AdxGatePassed))
+                    Dispatch(Sub() assetVm.ApplyConfidence(e.UpPct, e.DownPct, e.AdxGatePassed, e.AdxValue, e.LastClose))
                 End Sub
 
             AddHandler engine.LogMessage,
@@ -247,6 +247,27 @@ Namespace TopStepTrader.UI.ViewModels
             AddHandler engine.ExecutionStopped,
                 Sub(s As Object, reason As String)
                     Dispatch(Sub() LogLine($"[{assetVm.Symbol}] ■ Stopped: {reason}"))
+                End Sub
+
+            AddHandler engine.TradeOpened,
+                Sub(s As Object, e As TradeOpenedEventArgs)
+                    Dispatch(Sub()
+                                 assetVm.OpenTrade(e.Side, e.EntryPrice, e.Amount, e.Leverage)
+                                 LogLine($"[{assetVm.Symbol}] 🟢 Trade opened — {e.Side} @ {e.EntryPrice:F4} | ${e.Amount:F0} × {e.Leverage}x")
+                             End Sub)
+                End Sub
+
+            AddHandler engine.TradeClosed,
+                Sub(s As Object, e As TradeClosedEventArgs)
+                    Dispatch(Sub()
+                                 assetVm.CloseTrade()
+                                 LogLine($"[{assetVm.Symbol}] 🔴 Trade closed — {e.ExitReason} | P&L={If(e.PnL >= 0D, "+", "")}${e.PnL:F2}")
+                             End Sub)
+                End Sub
+
+            AddHandler engine.PositionSynced,
+                Sub(s As Object, e As PositionSyncedEventArgs)
+                    Dispatch(Sub() assetVm.UpdateTradePnl(e.UnrealizedPnlUsd))
                 End Sub
         End Sub
 

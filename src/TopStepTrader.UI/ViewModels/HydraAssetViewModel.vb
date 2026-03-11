@@ -40,6 +40,81 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
+        ' ── ADX display ──────────────────────────────────────────────────────────
+        Private _adxValueF As Single = -1F   ' sentinel: -1 = no data received yet
+        Public Property AdxValue As Single
+            Get
+                Return _adxValueF
+            End Get
+            Set(value As Single)
+                Dim safeValue As Single = If(Single.IsNaN(value), -1F, value)
+                If safeValue = _adxValueF Then Return
+                _adxValueF = safeValue
+                NotifyPropertyChanged(NameOf(AdxValue))
+                NotifyPropertyChanged(NameOf(AdxDisplay))
+                NotifyPropertyChanged(NameOf(AdxLineDisplay))
+            End Set
+        End Property
+
+        ''' <summary>"ADX: X.X" when a value has been received; "ADX: —" until then.</summary>
+        Public ReadOnly Property AdxDisplay As String
+            Get
+                Return If(_adxValueF >= 0, $"ADX: {_adxValueF:F1}", "ADX: —")
+            End Get
+        End Property
+
+        ' ── 5-minute price-change buffer ─────────────────────────────────────────
+        Private _priceTimes As New List(Of DateTime)()
+        Private _pricePrices As New List(Of Decimal)()
+
+        Private _change5mDisplay As String = "5m: —"
+        Public Property Change30mDisplay As String   ' name kept for any existing callers
+            Get
+                Return _change5mDisplay
+            End Get
+            Private Set(value As String)
+                If SetProperty(_change5mDisplay, value) Then
+                    NotifyPropertyChanged(NameOf(AdxLineDisplay))
+                End If
+            End Set
+        End Property
+
+        ''' <summary>Combined one-liner: "ADX: 15.3  |  5m: +0.42%"</summary>
+        Public ReadOnly Property AdxLineDisplay As String
+            Get
+                Dim adxPart = If(_adxValueF >= 0, $"ADX: {_adxValueF:F1}", "ADX: —")
+                Return $"{adxPart}  |  {_change5mDisplay}"
+            End Get
+        End Property
+
+        Private Sub RecordPrice(price As Decimal, timestamp As DateTime)
+            _priceTimes.Add(timestamp)
+            _pricePrices.Add(price)
+            Dim cutoff = timestamp.AddMinutes(-8)
+            Dim trim = 0
+            While trim < _priceTimes.Count AndAlso _priceTimes(trim) < cutoff
+                trim += 1
+            End While
+            If trim > 0 Then
+                _priceTimes.RemoveRange(0, trim)
+                _pricePrices.RemoveRange(0, trim)
+            End If
+            Dim target = timestamp.AddMinutes(-5)
+            Dim bestIdx As Integer = -1
+            Dim bestDiff = TimeSpan.MaxValue
+            For j = 0 To _priceTimes.Count - 1
+                Dim diff = (target - _priceTimes(j)).Duration()
+                If diff < bestDiff AndAlso diff <= TimeSpan.FromMinutes(2) Then
+                    bestDiff = diff
+                    bestIdx = j
+                End If
+            Next
+            If bestIdx >= 0 AndAlso _pricePrices(bestIdx) > 0 Then
+                Dim pct = ((price - _pricePrices(bestIdx)) / _pricePrices(bestIdx)) * 100D
+                Change30mDisplay = If(pct >= 0, $"5m: +{pct:F2}%", $"5m: {pct:F2}%")
+            End If
+        End Sub
+
         Private _upPct As Integer = 0
         Private _adxGatePassed As Boolean = True
 
@@ -50,6 +125,7 @@ Namespace TopStepTrader.UI.ViewModels
             Set(value As Integer)
                 If SetProperty(_upPct, value) Then
                     NotifyPropertyChanged(NameOf(ConfidenceColor))
+                    NotifyPropertyChanged(NameOf(DirectionForeground))
                 End If
             End Set
         End Property
@@ -89,13 +165,16 @@ Namespace TopStepTrader.UI.ViewModels
                 Return _isMarketOpen
             End Get
             Private Set(value As Boolean)
-                If SetProperty(_isMarketOpen, value) Then
-                    NotifyPropertyChanged(NameOf(AssetStatusText))
-                    NotifyPropertyChanged(NameOf(StatusForeground))
-                    NotifyPropertyChanged(NameOf(TileBackground))
-                End If
-            End Set
-        End Property
+                    If SetProperty(_isMarketOpen, value) Then
+                        NotifyPropertyChanged(NameOf(AssetStatusText))
+                        NotifyPropertyChanged(NameOf(StatusForeground))
+                        NotifyPropertyChanged(NameOf(StatusBorderBrush))
+                        NotifyPropertyChanged(NameOf(CardForeground))
+                        NotifyPropertyChanged(NameOf(ConfidenceColor))
+                        NotifyPropertyChanged(NameOf(TileBackground))
+                    End If
+                End Set
+            End Property
 
         ''' <summary>"OPEN" or "CLOSED" — drives the status badge in the card.</summary>
         Public ReadOnly Property AssetStatusText As String
@@ -106,19 +185,30 @@ Namespace TopStepTrader.UI.ViewModels
 
         ''' <summary>
         ''' Foreground colour for the OPEN / CLOSED status badge:
-        '''   CLOSED                       → Red
-        '''   OPEN + confidence ≥ 80%      → ForestGreen
-        '''   OPEN + confidence &lt; 80%   → muted (TextSecondaryBrush equivalent)
+        '''   CLOSED  → Red
+        '''   OPEN    → ForestGreen (always, consistent with whole-card requirement)
         ''' </summary>
         Public ReadOnly Property StatusForeground As SolidColorBrush
             Get
                 If Not _isMarketOpen Then
                     Return New SolidColorBrush(Colors.Red)
-                ElseIf _currentConfidencePct >= 80 Then
-                    Return New SolidColorBrush(Color.FromRgb(&H22, &H8B, &H22))  ' ForestGreen
-                Else
-                    Return New SolidColorBrush(Color.FromArgb(&HFF, &H80, &H80, &HA0))
                 End If
+                Return New SolidColorBrush(Color.FromRgb(&H22, &H8B, &H22))  ' ForestGreen
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' Base foreground for the entire asset card.
+        ''' ForestGreen when the market is open (tradeable); white otherwise.
+        ''' Setting this on the container causes it to cascade to all child TextBlocks
+        ''' that do not override Foreground explicitly.
+        ''' </summary>
+        Public ReadOnly Property CardForeground As SolidColorBrush
+            Get
+                If _isMarketOpen Then
+                    Return New SolidColorBrush(Color.FromRgb(&H22, &H8B, &H22))  ' ForestGreen
+                End If
+                Return New SolidColorBrush(Colors.White)
             End Get
         End Property
 
@@ -136,6 +226,37 @@ Namespace TopStepTrader.UI.ViewModels
         End Property
 
         ''' <summary>
+        ''' Top-border accent colour for the asset card:
+        '''   Market open  → Forest Green
+        '''   Market closed → Red
+        ''' </summary>
+        Public ReadOnly Property StatusBorderBrush As SolidColorBrush
+            Get
+                If _isMarketOpen Then
+                    Return New SolidColorBrush(Color.FromRgb(&H22, &H8B, &H22))
+                End If
+                Return New SolidColorBrush(Colors.Red)
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' Foreground colour for the direction / confidence summary line:
+        '''   Long bias (upPct > 50)  → Forest Green
+        '''   Short bias (upPct &lt; 50) → Red
+        '''   Neutral / no data      → muted grey
+        ''' </summary>
+        Public ReadOnly Property DirectionForeground As SolidColorBrush
+            Get
+                If _upPct > 50 Then
+                    Return New SolidColorBrush(Color.FromRgb(&H22, &H8B, &H22))
+                ElseIf _upPct < 50 AndAlso _upPct > 0 Then
+                    Return New SolidColorBrush(Colors.Red)
+                End If
+                Return New SolidColorBrush(Color.FromArgb(&HFF, &H80, &H80, &HA0))
+            End Get
+        End Property
+
+        ''' <summary>
         ''' Confidence bar colour (unchanged from original — separate from status badge):
         '''   ADX suppressed        → amber  (#FF9500)
         '''   dominant score ≥ 85%  → green  (#27AE60)
@@ -144,6 +265,9 @@ Namespace TopStepTrader.UI.ViewModels
         ''' </summary>
         Public ReadOnly Property ConfidenceColor As SolidColorBrush
             Get
+                If _isMarketOpen Then
+                    Return New SolidColorBrush(Color.FromRgb(&H22, &H8B, &H22))  ' ForestGreen
+                End If
                 If _upPct = 0 Then
                     Return New SolidColorBrush(Color.FromArgb(&HFF, &H80, &H80, &HA0))
                 End If
@@ -177,9 +301,13 @@ Namespace TopStepTrader.UI.ViewModels
         }
 
         ''' <summary>
-        ''' Recomputes IsMarketOpen from the current local day-of-week.
-        ''' Rule: known crypto symbols are always open (24/7);
-        '''       all other assets (OIL, GOLD, indices) are closed Sat + Sun.
+        ''' Recomputes IsMarketOpen from the current UTC time.
+        ''' Rules:
+        '''   Crypto symbols (BTC, ETH, …) → always open (24/7).
+        '''   All other assets (indices, OIL, GOLD, …):
+        '''     • Closed all day Saturday (UTC).
+        '''     • Closed Sunday before 23:00 UTC (CME opens ~22:00–23:00 UTC Sun).
+        '''     • Closed daily 21:00–22:00 UTC (CME ~5–6 PM ET maintenance break).
         ''' Isolated here so a future API-driven implementation replaces only this method.
         ''' </summary>
         Public Sub RefreshMarketStatus()
@@ -187,8 +315,22 @@ Namespace TopStepTrader.UI.ViewModels
             If CryptoSymbols.Contains(Symbol) Then
                 open = True
             Else
-                Dim day = DateTime.Now.DayOfWeek
-                open = day <> DayOfWeek.Saturday AndAlso day <> DayOfWeek.Sunday
+                Dim now = DateTime.UtcNow
+                Dim day = now.DayOfWeek
+                Dim hour = now.Hour
+
+                ' Closed all day Saturday
+                If day = DayOfWeek.Saturday Then
+                    open = False
+                ' Closed Sunday before 23:00 UTC (CME reopens Sunday evening)
+                ElseIf day = DayOfWeek.Sunday AndAlso hour < 23 Then
+                    open = False
+                ' Closed daily during CME maintenance 21:00–22:00 UTC (≈ 5–6 PM ET)
+                ElseIf hour = 21 Then
+                    open = False
+                Else
+                    open = True
+                End If
             End If
             IsMarketOpen = open
         End Sub
@@ -197,19 +339,53 @@ Namespace TopStepTrader.UI.ViewModels
         ''' Called from the engine ConfidenceUpdated event on the UI dispatcher.
         ''' Updates all display properties atomically and refreshes market status.
         ''' </summary>
-        Public Sub ApplyConfidence(upPct As Integer, downPct As Integer, adxGatePassed As Boolean)
+        Public Sub ApplyConfidence(upPct As Integer, downPct As Integer, adxGatePassed As Boolean,
+                                     Optional adxValue As Single = 0,
+                                     Optional lastClose As Decimal = 0D)
             Dim isUp = (upPct >= downPct)
             Dim dominant = If(isUp, upPct, downPct)
-            Dim direction = If(isUp, "UP", "DOWN")
-            Dim tradeLabel = If(isUp, "LONG", "SHORT")
+            Dim tradeLabel = If(isUp, "Long", "Short")
             Dim arrow = If(isUp, "↑", "↓")
-            Dim gateSuffix = If(Not adxGatePassed, " ⊘ ADX<25", "")
-            SummaryLine = $"{arrow} {direction} {dominant}% ({tradeLabel}){gateSuffix}"
+            SummaryLine = $"{arrow} {tradeLabel} — {dominant}%"
             LastUpdated = DateTime.Now.ToString("HH:mm:ss")
             UpPct = upPct
             AdxGatePassed = adxGatePassed
+            AdxValue = adxValue
             CurrentConfidencePct = dominant
+            If lastClose > 0 Then RecordPrice(lastClose, DateTime.Now)
             RefreshMarketStatus()
+        End Sub
+
+        ' ── Live position / trail bracket display ─────────────────────────────────
+
+        Private _tradeStatusLine As String = "—  No position"
+        Public Property TradeStatusLine As String
+            Get
+                Return _tradeStatusLine
+            End Get
+            Private Set(value As String)
+                SetProperty(_tradeStatusLine, value)
+            End Set
+        End Property
+
+        ''' <summary>Called when the engine opens a new position on this asset.</summary>
+        Public Sub OpenTrade(side As Core.Enums.OrderSide, entryPrice As Decimal, amount As Decimal, leverage As Integer)
+            Dim sideLabel = If(side = Core.Enums.OrderSide.Buy, "🟢 LONG", "🔴 SHORT")
+            TradeStatusLine = $"{sideLabel}  @{entryPrice:F0}  ${amount:F0}×{leverage}  | P&L: —"
+        End Sub
+
+        ''' <summary>Called each PositionSynced tick to update the live P&amp;L on the card.</summary>
+        Public Sub UpdateTradePnl(unrealizedPnlUsd As Decimal)
+            If _tradeStatusLine = "—  No position" Then Return
+            Dim sign = If(unrealizedPnlUsd >= 0D, "+", "")
+            Dim pnlIdx = _tradeStatusLine.LastIndexOf("| P&L:", StringComparison.Ordinal)
+            Dim baseText = If(pnlIdx >= 0, _tradeStatusLine.Substring(0, pnlIdx), _tradeStatusLine & " ")
+            TradeStatusLine = $"{baseText.TrimEnd()}  | P&L: {sign}${unrealizedPnlUsd:F2}"
+        End Sub
+
+        ''' <summary>Called when the engine closes the position (SL/TP, trail, reversal, or neutral exit).</summary>
+        Public Sub CloseTrade()
+            TradeStatusLine = "—  No position"
         End Sub
 
     End Class

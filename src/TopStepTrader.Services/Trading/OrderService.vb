@@ -270,29 +270,51 @@ Namespace TopStepTrader.Services.Trading
                 Dim positions = Await _orderClient.GetPortfolioPositionsAsync(cancel)
                 Dim numericInstrId = FavouriteContracts.TryGetBySymbol(contractId)?.InstrumentId
 
-                ' Prefer exact positionId match; fall back to first position for the instrument.
-                Dim match As EToroPositionDto = Nothing
+                ' When a specific positionId is requested return only that position.
+                ' Otherwise aggregate ALL open positions for the instrument so the engine receives
+                ' combined units and a weighted-average open rate — essential for accurate multi-
+                ' position P&L.  Note: the eToro portfolio API does not include a pnL field;
+                ' P&L is calculated by the engine using currentPrice from the latest bar.
+                Dim matchList As List(Of EToroPositionDto)
                 If positionId.HasValue Then
-                    match = positions.FirstOrDefault(Function(p) p.PositionId = positionId.Value)
+                    Dim exactMatch = positions.FirstOrDefault(Function(p) p.PositionId = positionId.Value)
+                    matchList = If(exactMatch IsNot Nothing,
+                                   New List(Of EToroPositionDto) From {exactMatch},
+                                   New List(Of EToroPositionDto)())
+                ElseIf numericInstrId.HasValue Then
+                    matchList = positions.Where(Function(p) p.InstrumentId = numericInstrId.Value).ToList()
+                Else
+                    matchList = New List(Of EToroPositionDto)()
                 End If
-                If match Is Nothing AndAlso numericInstrId.HasValue Then
-                    match = positions.FirstOrDefault(Function(p) p.InstrumentId = numericInstrId.Value)
-                End If
-                If match Is Nothing Then Return Nothing
+                If matchList.Count = 0 Then Return Nothing
+
+                ' Use the first (oldest) position as the representative for PositionId/IsBuy/OpenedAt.
+                ' Aggregate units and amount; weighted-average open rate ensures:
+                '   P&L = (currentPrice − weightedOpenRate) × totalUnits  gives the correct total.
+                Dim rep = matchList.First()
+                Dim totalUnits As Double = matchList.Sum(Function(p) p.Units)
+                Dim totalAmount As Double = matchList.Sum(Function(p) p.Amount)
+                Dim weightedOpenRate As Double = If(totalUnits > 0.0,
+                    matchList.Sum(Function(p) p.OpenRate * p.Units) / totalUnits,
+                    rep.OpenRate)
 
                 Dim openedAt = DateTimeOffset.MinValue
                 Dim parsedDt As DateTimeOffset
-                If Not String.IsNullOrEmpty(match.OpenDateTime) AndAlso
-                   DateTimeOffset.TryParse(match.OpenDateTime, parsedDt) Then
+                If Not String.IsNullOrEmpty(rep.OpenDateTime) AndAlso
+                   DateTimeOffset.TryParse(rep.OpenDateTime, parsedDt) Then
                     openedAt = parsedDt.ToUniversalTime()
                 End If
 
                 Return New LivePositionSnapshot With {
-                    .PositionId = match.PositionId,
-                    .UnrealizedPnlUsd = CDec(match.PnL),
+                    .PositionId = rep.PositionId,
+                    .UnrealizedPnlUsd = 0D,
                     .OpenedAtUtc = openedAt,
-                    .IsBuy = match.IsBuy,
-                    .Amount = CDec(match.Amount)
+                    .IsBuy = rep.IsBuy,
+                    .Amount = CDec(totalAmount),
+                    .OpenRate = CDec(weightedOpenRate),
+                    .Units = CDec(totalUnits),
+                    .Leverage = CInt(rep.Leverage),
+                    .PositionCount = matchList.Count
                 }
             Catch ex As Exception
                 _logger.LogWarning(ex, "GetLivePositionSnapshotAsync failed for {Contract}", contractId)
@@ -328,6 +350,33 @@ Namespace TopStepTrader.Services.Trading
                 End Try
             Next
             Return allOk
+        End Function
+
+        Public Async Function EditPositionSlTpAsync(positionId As Long,
+                                                     slRate As Decimal?,
+                                                     tpRate As Decimal?,
+                                                     Optional cancel As CancellationToken = Nothing) As Task(Of Boolean) _
+            Implements IOrderService.EditPositionSlTpAsync
+            Try
+                Dim req = New EditPositionRequest With {
+                    .StopLossRate = If(slRate.HasValue, CDbl(slRate.Value), CType(Nothing, Double?)),
+                    .TakeProfitRate = If(tpRate.HasValue, CDbl(tpRate.Value), CType(Nothing, Double?))
+                }
+                Dim resp = Await _orderClient.EditPositionAsync(positionId, req, cancel)
+                If resp.Success Then
+                    _logger.LogInformation("EditPositionSlTp: updated positionId={PosId} SL={SL} TP={TP}",
+                                           positionId,
+                                           If(slRate.HasValue, slRate.Value.ToString("F4"), "none"),
+                                           If(tpRate.HasValue, tpRate.Value.ToString("F4"), "none"))
+                Else
+                    _logger.LogWarning("EditPositionSlTp: API rejected update for positionId={PosId}: {Msg}",
+                                       positionId, resp.ErrorMessage)
+                End If
+                Return resp.Success
+            Catch ex As Exception
+                _logger.LogWarning(ex, "EditPositionSlTpAsync failed for positionId={PosId}", positionId)
+                Return False
+            End Try
         End Function
 
     End Class

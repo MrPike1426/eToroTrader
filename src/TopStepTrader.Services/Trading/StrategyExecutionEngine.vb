@@ -192,7 +192,19 @@ Namespace TopStepTrader.Services.Trading
                                  _positionOpen = True
                                  _openPositionId = snapshot.PositionId
                                  _positionOpenedAt = DateTimeOffset.UtcNow.AddSeconds(-61) ' skip propagation guard
-                                 Log($"⚠️  Existing open position detected on startup (positionId={snapshot.PositionId}, P&L={snapshot.UnrealizedPnlUsd:+0.00;-0.00}) — monitoring without placing new entry.")
+                                 If snapshot.OpenRate > 0D Then
+                                         _lastEntryPrice = snapshot.OpenRate
+                                         _lastEntrySide = If(snapshot.IsBuy, OrderSide.Buy, OrderSide.Sell)
+                                     End If
+                                     _currentTrendSide = If(snapshot.IsBuy, OrderSide.Buy, OrderSide.Sell)
+                                     _lastFinalAmount = snapshot.Amount
+                                     _lastLeverage = snapshot.Leverage
+                                     _openTradeCount = snapshot.PositionCount
+                                     Dim startupSide = If(snapshot.IsBuy, OrderSide.Buy, OrderSide.Sell)
+                                     RaiseEvent TradeOpened(Me, New TradeOpenedEventArgs(startupSide, strategy.ContractId, 100,
+                                         snapshot.OpenedAtUtc, Nothing, snapshot.PositionId,
+                                         snapshot.OpenedAtUtc, snapshot.Amount, snapshot.Leverage, snapshot.OpenRate))
+                                     Log($"⚠️  Existing {snapshot.PositionCount} position(s) detected on startup (positionId={snapshot.PositionId}, entry={snapshot.OpenRate:F4}, units={snapshot.Units:F3}) — monitoring without placing new entry. Stepped trail active from ≥2% profit.")
                              Else
                                  Log($"✓ No existing positions for {strategy.ContractId} — ready to trade.")
                              End If
@@ -341,6 +353,18 @@ Namespace TopStepTrader.Services.Trading
             Dim isNewBar = (barPeriodStart > _lastBarTimestamp)
             If isNewBar Then _lastBarTimestamp = barPeriodStart
 
+            ' ── Stale bar guard ──────────────────────────────────────────────────────
+            ' When the market is closed the ingestion service stops receiving new bars
+            ' but the DB retains the last session's history.  barIsStale = True when the
+            ' most recent bar is older than 3× the strategy timeframe — a reliable sign
+            ' that the market is not currently producing data (after-hours, weekend, or
+            ' daily maintenance break).  Entry signals and order placement are suppressed;
+            ' position monitoring (broker sync + trailing bracket) continues normally.
+            Dim barAgeMins = (DateTimeOffset.UtcNow - lastBar.Timestamp).TotalMinutes
+            Dim barIsStale = barAgeMins > _strategy.TimeframeMinutes * 3.0
+
+            If Not barIsStale Then
+
             Select Case _strategy.Condition
                 Case StrategyConditionType.FullCandleOutsideBands,
                      StrategyConditionType.CloseOutsideBands
@@ -379,16 +403,14 @@ Namespace TopStepTrader.Services.Trading
                     Dim rsi = TechnicalIndicators.RSI(closes, _strategy.IndicatorPeriod)
                     Dim rsiVal = TechnicalIndicators.LastValid(rsi)
 
-                    If _strategy.Condition = StrategyConditionType.RSIOversold Then
-                        If _strategy.GoLongWhenBelowBands AndAlso rsiVal < 30 Then
-                            Log($"✅ RSI oversold! RSI={rsiVal:F1} < 30")
-                            side = OrderSide.Buy
-                        ElseIf _strategy.GoShortWhenAboveBands AndAlso rsiVal > 70 Then
-                            Log($"✅ RSI overbought! RSI={rsiVal:F1} > 70")
-                            side = OrderSide.Sell
-                        Else
-                            Log($"Bar checked — RSI={rsiVal:F1} | no signal ({remStr})")
-                        End If
+                    If _strategy.GoLongWhenBelowBands AndAlso rsiVal < 30 Then
+                        Log($"✅ RSI oversold! RSI={rsiVal:F1} < 30")
+                        side = OrderSide.Buy
+                    ElseIf _strategy.GoShortWhenAboveBands AndAlso rsiVal > 70 Then
+                        Log($"✅ RSI overbought! RSI={rsiVal:F1} > 70")
+                        side = OrderSide.Sell
+                    Else
+                        Log($"Bar checked — RSI={rsiVal:F1} | no signal ({remStr})")
                     End If
 
                 Case StrategyConditionType.EMACrossAbove, StrategyConditionType.EMACrossBelow
@@ -479,7 +501,7 @@ Namespace TopStepTrader.Services.Trading
 
                     ' Raise ConfidenceUpdated AFTER the ADX gate is known so the UI can
                     ' display the suppressed state (amber ⊘) instead of a misleading green arrow.
-                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(CInt(upPct), CInt(downPct), adxGatePassed))
+                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(CInt(upPct), CInt(downPct), adxGatePassed, CSng(adxNow), lastClose))
 
                     If Not adxGatePassed Then
                         Log($"Bar checked — ADX={adxNow:F1} < 25 (ranging market) — signal suppressed | EMA/RSI: UP={upPct:F0}% DOWN={downPct:F0}% | ATR={_currentAtrValue:F4} | {remStr}")
@@ -501,7 +523,7 @@ Namespace TopStepTrader.Services.Trading
                     _mcCloudSlPrice = Nothing   ' reset; will be set only when a signal fires
 
                     ' Raise live confidence telemetry every bar regardless of signal state
-                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(mcResult.BullScore, mcResult.BearScore))
+                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(mcResult.BullScore, mcResult.BearScore, adxValue:=mcResult.AdxValue, lastClose:=CDec(lastBar.Close)))
 
                     If mcResult.Side.HasValue Then
                         Dim mcSide = mcResult.Side.Value
@@ -524,7 +546,7 @@ Namespace TopStepTrader.Services.Trading
                     _currentAtrValue = CDec(TechnicalIndicators.LastValid(lultAtrVals))
                     Dim lultResult = LultDivergenceStrategy.Evaluate(highs, lows, closes, lultOpens)
                     ' Raise live confidence telemetry every bar regardless of signal state
-                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(lultResult.BullScore, lultResult.BearScore))
+                    RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(lultResult.BullScore, lultResult.BearScore, lastClose:=CDec(lastBar.Close)))
                     If Not lultResult.IsInTradingWindow Then
                         Log($"Bar checked — LULT (OUT of EST window): {lultResult.StatusLine} | {remStr}")
                     ElseIf lultResult.Side.HasValue Then
@@ -589,7 +611,9 @@ Namespace TopStepTrader.Services.Trading
                 End If
             End If
 
-            ' ── API-authoritative position reconciliation ─────────────────────────
+            End If ' Not barIsStale
+
+            ' ── API-authoritative position reconciliation
             ' Queries the broker for ANY open position on this contract every tick (after
             ' the 60-s propagation guard).  Broker state is always authoritative.
             ' If the API reports no positions, ALL locally-tracked UI rows are force-closed
@@ -613,9 +637,14 @@ Namespace TopStepTrader.Services.Trading
                             _openPositionId = snapshot.PositionId
                             Log($"🔗 eToro positionId resolved: {snapshot.PositionId}")
                         End If
-                        _lastApiPnl = snapshot.UnrealizedPnlUsd
+                        ' eToro portfolio API does not return a pnL field — calculate from
+                        ' current bar close price across all aggregated position units.
+                        Dim calculatedPnl = If(snapshot.Units > 0D,
+                            Math.Round((CDec(lastBar.Close) - snapshot.OpenRate) * snapshot.Units *
+                                       If(snapshot.IsBuy, 1D, -1D), 2), 0D)
+                        _lastApiPnl = calculatedPnl
                         RaiseEvent PositionSynced(Me, New PositionSyncedEventArgs(
-                            snapshot.PositionId, snapshot.UnrealizedPnlUsd, snapshot.OpenedAtUtc))
+                            snapshot.PositionId, calculatedPnl, snapshot.OpenedAtUtc))
                     Else
                         ' No positions at all for this contract — closed by SL/TP, manual
                         ' action, or broker risk controls.  Force-close every in-progress UI row.
@@ -662,7 +691,9 @@ Namespace TopStepTrader.Services.Trading
                 Return
             End If
 
-            If _strategy.Condition = StrategyConditionType.EmaRsiWeightedScore Then
+            If barIsStale Then
+                Log($"⏸  Market closed — last bar is {CInt(barAgeMins)} min old (limit: {_strategy.TimeframeMinutes * 3} min) — monitoring positions only. ({remStr})")
+            ElseIf _strategy.Condition = StrategyConditionType.EmaRsiWeightedScore Then
                 Await EvaluateConfidenceActionsAsync(rawUpPct, rawDownPct, side, CDec(lastBar.Close), isNewBar, ct)
             Else
                 If side.HasValue Then
@@ -850,9 +881,9 @@ Namespace TopStepTrader.Services.Trading
 
             Dim ok = Await _orderService.FlattenContractAsync(_strategy.AccountId, _strategy.ContractId, ct)
             If ok Then
-                Log($"✅ Flatten complete — {_strategy.ContractId} closed. Entering {newSide}...")
+                Log($"✅ Flatten complete — {_strategy.ContractId} closed. Waiting for next {newSide} signal...")
             Else
-                Log($"⚠️  Flatten partially failed for {_strategy.ContractId} — check positions manually. Continuing with {newSide}...")
+                Log($"⚠️  Flatten partially failed for {_strategy.ContractId} — check positions manually. Waiting for next {newSide} signal...")
             End If
 
             ' Raise TradeClosed for every row that is still showing "In Progress".
@@ -1216,6 +1247,7 @@ Namespace TopStepTrader.Services.Trading
                     $"steppedProfit={steppedProfit:F2}% " &
                     $"SL={_trailTrackedSlPrice:F4} (+{steppedProfit - TrailSlOffset:F2}%) " &
                     $"TP={_trailTrackedTpPrice:F4} (+{steppedProfit + _trailTpAbove:F2}%)")
+                Await PushTrailToAllPositionsAsync(ct)
                 Return False
             End If
 
@@ -1228,7 +1260,31 @@ Namespace TopStepTrader.Services.Trading
                 $"steppedProfit={steppedProfit:F2}% " &
                 $"SL={_trailTrackedSlPrice:F4} (+{steppedProfit - TrailSlOffset:F2}%) " &
                 $"TP={_trailTrackedTpPrice:F4} (+{steppedProfit + _trailTpAbove:F2}%)")
+            Await PushTrailToAllPositionsAsync(ct)
             Return False
+        End Function
+
+        ''' <summary>
+        ''' Pushes the current engine-tracked SL/TP to every live position on the broker.
+        ''' Called whenever the stepped trail arms or advances a step so the broker-side
+        ''' SL/TP is kept in sync — positions remain protected if the engine is stopped.
+        ''' </summary>
+        Private Async Function PushTrailToAllPositionsAsync(ct As CancellationToken) As Task
+            Dim slToSend As Decimal? = If(_trailTrackedSlPrice > 0D, _trailTrackedSlPrice, CType(Nothing, Decimal?))
+            Dim tpToSend As Decimal? = If(_trailTrackedTpPrice > 0D, _trailTrackedTpPrice, CType(Nothing, Decimal?))
+            Dim liveOrders = Await _orderService.GetLiveWorkingOrdersAsync(_strategy.AccountId, _strategy.ContractId, ct)
+            For Each pos In liveOrders
+                Dim posId = If(pos.ExternalPositionId, pos.ExternalOrderId)
+                If Not posId.HasValue Then Continue For
+                Dim ok = Await _orderService.EditPositionSlTpAsync(posId.Value, slToSend, tpToSend, ct)
+                If ok Then
+                    Log($"✅ Trail SL/TP sent to broker — positionId={posId.Value} " &
+                        $"SL={If(slToSend.HasValue, slToSend.Value.ToString("F4"), "none")} " &
+                        $"TP={If(tpToSend.HasValue, tpToSend.Value.ToString("F4"), "none")}")
+                Else
+                    Log($"⚠️  Failed to push trail SL/TP to broker for positionId={posId.Value} — engine-side monitoring still active")
+                End If
+            Next
         End Function
 
         ''' <summary>

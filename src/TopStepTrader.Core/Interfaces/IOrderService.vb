@@ -46,6 +46,17 @@ Namespace TopStepTrader.Core.Interfaces
         Function FlattenContractAsync(accountId As Long,
                                       contractId As String,
                                       Optional cancel As CancellationToken = Nothing) As Task(Of Boolean)
+
+        ''' <summary>
+        ''' Updates the SL and/or TP of an open position on the broker.
+        ''' Used by the stepped trailing bracket to push free-ride levels to eToro
+        ''' so positions are protected even if the engine is stopped.
+        ''' Returns True on success.
+        ''' </summary>
+        Function EditPositionSlTpAsync(positionId As Long,
+                                       slRate As Decimal?,
+                                       tpRate As Decimal?,
+                                       Optional cancel As CancellationToken = Nothing) As Task(Of Boolean)
     End Interface
 
 End Namespace

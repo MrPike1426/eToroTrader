@@ -70,6 +70,20 @@ Namespace TopStepTrader.API.Models.Requests
     End Class
 
     ''' <summary>
+    ''' Request body for PUT /api/v1/trading/execution/demo/positions/{positionId}
+    ''' Updates the SL and/or TP of an already-open position.
+    ''' </summary>
+    Public Class EditPositionRequest
+        <JsonPropertyName("StopLossRate")>
+        <JsonIgnore(Condition:=JsonIgnoreCondition.WhenWritingNull)>
+        Public Property StopLossRate As Double?
+
+        <JsonPropertyName("TakeProfitRate")>
+        <JsonIgnore(Condition:=JsonIgnoreCondition.WhenWritingNull)>
+        Public Property TakeProfitRate As Double?
+    End Class
+
+    ''' <summary>
     ''' Optional body for POST /api/v1/trading/execution/demo/market-close-orders/positions/{positionId}
     ''' Omit UnitsToDeduct (or set to null) to close the full position.
     ''' </summary>

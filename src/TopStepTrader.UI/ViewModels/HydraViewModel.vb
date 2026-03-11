@@ -128,6 +128,7 @@ Namespace TopStepTrader.UI.ViewModels
             Set(value As Boolean)
                 SetProperty(_isRunning, value)
                 OnPropertyChanged(NameOf(IsNotRunning))
+                NotifyPropertyChanged(NameOf(LastUpdatedDisplay))
                 RelayCommand.RaiseCanExecuteChanged()
             End Set
         End Property
@@ -167,7 +168,7 @@ Namespace TopStepTrader.UI.ViewModels
         End Property
 
         ' ── Status / Log ──────────────────────────────────────────────────────────
-        Private _statusText As String = "● Idle"
+        Private _statusText As String = "● Select a strategy"
         Public Property StatusText As String
             Get
                 Return _statusText
@@ -175,6 +176,30 @@ Namespace TopStepTrader.UI.ViewModels
             Set(value As String)
                 SetProperty(_statusText, value)
             End Set
+        End Property
+
+        Private _lastUpdatedAt As String = String.Empty
+        Public Property LastUpdatedAt As String
+            Get
+                Return _lastUpdatedAt
+            End Get
+            Set(value As String)
+                If SetProperty(_lastUpdatedAt, value) Then
+                    NotifyPropertyChanged(NameOf(LastUpdatedDisplay))
+                End If
+            End Set
+        End Property
+
+        ''' <summary>
+        ''' Shows "  Last Updated: HH:mm:ss" next to the running status; empty when not running.
+        ''' </summary>
+        Public ReadOnly Property LastUpdatedDisplay As String
+            Get
+                If _isRunning AndAlso Not String.IsNullOrEmpty(_lastUpdatedAt) Then
+                    Return $"   Last Updated: {_lastUpdatedAt}"
+                End If
+                Return String.Empty
+            End Get
         End Property
 
         Public Property LogEntries As New ObservableCollection(Of String)
@@ -238,7 +263,10 @@ Namespace TopStepTrader.UI.ViewModels
                                      assetVm As HydraAssetViewModel)
             AddHandler engine.ConfidenceUpdated,
                 Sub(s As Object, e As ConfidenceUpdatedEventArgs)
-                    Dispatch(Sub() assetVm.ApplyConfidence(e.UpPct, e.DownPct, e.AdxGatePassed))
+                    Dispatch(Sub()
+                                 assetVm.ApplyConfidence(e.UpPct, e.DownPct, e.AdxGatePassed, e.AdxValue, e.LastClose)
+                                 LastUpdatedAt = DateTime.Now.ToString("HH:mm:ss")
+                             End Sub)
                 End Sub
 
             AddHandler engine.LogMessage,
@@ -249,6 +277,27 @@ Namespace TopStepTrader.UI.ViewModels
             AddHandler engine.ExecutionStopped,
                 Sub(s As Object, reason As String)
                     Dispatch(Sub() LogLine($"[{assetVm.Symbol}] ■ Stopped: {reason}"))
+                End Sub
+
+            AddHandler engine.TradeOpened,
+                Sub(s As Object, e As TradeOpenedEventArgs)
+                    Dispatch(Sub()
+                                 assetVm.OpenTrade(e.Side, e.EntryPrice, e.Amount, e.Leverage)
+                                 LogLine($"[{assetVm.Symbol}] 🟢 Trade opened — {e.Side} @ {e.EntryPrice:F4} | ${e.Amount:F0} × {e.Leverage}x")
+                             End Sub)
+                End Sub
+
+            AddHandler engine.TradeClosed,
+                Sub(s As Object, e As TradeClosedEventArgs)
+                    Dispatch(Sub()
+                                 assetVm.CloseTrade()
+                                 LogLine($"[{assetVm.Symbol}] 🔴 Trade closed — {e.ExitReason} | P&L={If(e.PnL >= 0D, "+", "")}${e.PnL:F2}")
+                             End Sub)
+                End Sub
+
+            AddHandler engine.PositionSynced,
+                Sub(s As Object, e As PositionSyncedEventArgs)
+                    Dispatch(Sub() assetVm.UpdateTradePnl(e.UnrealizedPnlUsd))
                 End Sub
         End Sub
 
@@ -415,7 +464,7 @@ Namespace TopStepTrader.UI.ViewModels
             If _currentStrategy Is Nothing OrElse SelectedAccount Is Nothing Then Return
 
             IsRunning = True
-            StatusText = "● Running — 🐙 Hydra | OIL · GOLD · NSDQ100 · SPX500 · UK100"
+            StatusText = $"● Running — {_currentStrategy.Name}"
             LogEntries.Clear()
 
             For i = 0 To 4
@@ -453,7 +502,7 @@ Namespace TopStepTrader.UI.ViewModels
                 _engines(i).[Stop]()
             Next
             IsRunning = False
-            StatusText = "● Idle"
+            StatusText = "● Not running"
         End Sub
 
         ' ── Helpers ───────────────────────────────────────────────────────────────

@@ -157,10 +157,19 @@ Namespace TopStepTrader.Core.Events
         ''' condition (MultiConfluence), where no separate gate exists.
         ''' </summary>
         Public ReadOnly Property AdxGatePassed As Boolean
-        Public Sub New(upPct As Integer, downPct As Integer, Optional adxGatePassed As Boolean = True)
+        ''' <summary>Actual ADX value at bar-check time. 0 when not applicable (e.g. MultiConfluence, LULT).</summary>
+        Public ReadOnly Property AdxValue As Single
+        ''' <summary>Last bar close price at the time the event was raised. 0 when not provided.</summary>
+        Public ReadOnly Property LastClose As Decimal
+        Public Sub New(upPct As Integer, downPct As Integer,
+                       Optional adxGatePassed As Boolean = True,
+                       Optional adxValue As Single = 0,
+                       Optional lastClose As Decimal = 0D)
             Me.UpPct = upPct
             Me.DownPct = downPct
             Me.AdxGatePassed = adxGatePassed
+            Me.AdxValue = adxValue
+            Me.LastClose = lastClose
         End Sub
     End Class
 

@@ -177,8 +177,10 @@
                 </Border>
 
                 <!-- ── Panel 2: Strategy Selection ──────────────────── -->
+                <!-- Collapses once monitoring starts; reappears when stopped -->
                 <Border Background="{StaticResource SurfaceBrush}"
-                        CornerRadius="6" Padding="20,14" Margin="0,8,0,0">
+                        CornerRadius="6" Padding="20,14" Margin="0,8,0,0"
+                        Visibility="{Binding IsNotRunning, Converter={StaticResource BoolToVisibilityConverter}}">
                     <StackPanel>
 
                         <!-- Header: STRATEGY label + active strategy inline -->
@@ -295,14 +297,17 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <!-- Top-accent card — colour driven by ConfidenceColor -->
+                                    <!-- Top-accent card — green when open, red when closed -->
                                     <Border Background="{StaticResource CardBrush}"
                                             CornerRadius="6"
                                             Margin="0,0,6,0"
                                             BorderThickness="0,3,0,0"
-                                            BorderBrush="{Binding ConfidenceColor}">
+                                            BorderBrush="{Binding StatusBorderBrush}">
+                                        <!-- FontSize=10 cascades to all text; ForestGreen cascades when tradeable -->
                                         <StackPanel Margin="12,14,12,14"
-                                                    HorizontalAlignment="Center">
+                                                    HorizontalAlignment="Center"
+                                                    TextElement.FontSize="10"
+                                                    TextElement.Foreground="{Binding CardForeground}">
 
                                             <!-- Large icon -->
                                             <TextBlock Text="{Binding Icon, Mode=OneWay}"
@@ -311,17 +316,9 @@
 
                                             <!-- Symbol name -->
                                             <TextBlock Text="{Binding Symbol, Mode=OneWay}"
-                                                       FontWeight="SemiBold" FontSize="13"
-                                                       HorizontalAlignment="Center"
-                                                       Margin="0,5,0,0"/>
-
-                                            <!-- Market OPEN / CLOSED badge -->
-                                            <TextBlock Text="{Binding AssetStatusText}"
-                                                       Foreground="{Binding StatusForeground}"
-                                                       FontFamily="Consolas" FontSize="10"
                                                        FontWeight="SemiBold"
                                                        HorizontalAlignment="Center"
-                                                       Margin="0,3,0,0"/>
+                                                       Margin="0,5,0,0"/>
 
                                             <!-- Divider -->
                                             <Border Height="1"
@@ -330,19 +327,29 @@
 
                                             <!-- Direction + confidence summary -->
                                             <TextBlock Text="{Binding SummaryLine}"
-                                                       Foreground="{Binding ConfidenceColor}"
-                                                       FontFamily="Consolas" FontSize="11"
+                                                       Foreground="{Binding DirectionForeground}"
+                                                       FontFamily="Consolas"
                                                        FontWeight="SemiBold"
                                                        HorizontalAlignment="Center"
                                                        TextAlignment="Center"
                                                        TextWrapping="Wrap"/>
 
-                                            <!-- Last-updated timestamp -->
-                                            <TextBlock Text="{Binding LastUpdated}"
-                                                       FontFamily="Consolas" FontSize="10"
-                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                            <!-- ADX value | 5-min price change (single row) -->
+                                            <TextBlock Text="{Binding AdxLineDisplay}"
+                                                       FontFamily="Consolas"
                                                        HorizontalAlignment="Center"
-                                                       Margin="0,8,0,0"/>
+                                                       Margin="0,6,0,0"/>
+
+                                            <!-- Live position / trail bracket status -->
+                                            <TextBlock Text="{Binding TradeStatusLine}"
+                                                       FontFamily="Consolas"
+                                                       FontSize="9"
+                                                       HorizontalAlignment="Center"
+                                                       TextAlignment="Center"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{StaticResource AccentBrush}"
+                                                       Margin="0,5,0,0"
+                                                       ToolTip="Live position status: entry price, size, and unrealised P&amp;L. Updates every 30 s. Trail bracket arms at ≥2% profit."/>
 
                                         </StackPanel>
                                     </Border>
@@ -428,13 +435,20 @@
                         Margin="10,0,0,0" Width="80"
                         ToolTip="Stop all 5 running asset sessions"/>
 
-                <TextBlock Grid.Column="2"
-                           Text="{Binding StatusText}"
-                           Foreground="{StaticResource AccentBrush}"
-                           FontWeight="SemiBold" FontSize="12"
-                           VerticalAlignment="Center"
-                           HorizontalAlignment="Right"
-                           Margin="16,0,0,0"/>
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Margin="16,0,0,0">
+                    <TextBlock Text="{Binding StatusText}"
+                               Foreground="{StaticResource AccentBrush}"
+                               FontWeight="SemiBold" FontSize="12"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding LastUpdatedDisplay}"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               FontSize="11"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
             </Grid>
         </Border>
 
