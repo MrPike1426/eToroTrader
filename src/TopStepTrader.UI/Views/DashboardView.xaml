@@ -70,7 +70,7 @@
                 <Border Background="{StaticResource CardBrush}" CornerRadius="6"
                         Margin="4,0,4,0" Padding="16,14">
                     <StackPanel>
-                        <TextBlock Text="ACCOUNT BALANCE" Style="{StaticResource SectionHeadingStyle}"/>
+                        <TextBlock Text="TOTAL VALUE" Style="{StaticResource SectionHeadingStyle}"/>
                         <TextBlock Text="{Binding Balance, StringFormat=C0}"
                                    Style="{StaticResource MetricValueStyle}" Margin="0,4,0,0"/>
                         <TextBlock Text="{Binding AccountName}" Style="{StaticResource LabelStyle}" Margin="0,4,0,0"/>

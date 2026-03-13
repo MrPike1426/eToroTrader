@@ -92,19 +92,19 @@
                                         <ColumnDefinition Width="50"/>
                                     </Grid.ColumnDefinitions>
 
-                                    <TextBlock Grid.Column="0" Text="TP / SL:"
+                                    <TextBlock Grid.Column="0" Text="TP $ / SL $:"
                                                VerticalAlignment="Center"
                                                Foreground="{StaticResource TextSecondaryBrush}"
                                                Margin="0,0,8,0"/>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                        <TextBox Text="{Binding TakeProfitTicks, UpdateSourceTrigger=PropertyChanged}"
+                                        <TextBox Text="{Binding InitialTpAmount, UpdateSourceTrigger=PropertyChanged}"
                                                  Width="44" IsEnabled="{Binding IsNotRunning}"
-                                                 ToolTip="Take profit ticks (default 10)"/>
+                                                 ToolTip="Initial take-profit in dollars (e.g. 20)"/>
                                         <TextBlock Text="/" VerticalAlignment="Center" Margin="5,0,5,0"
                                                    Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBox Text="{Binding StopLossTicks, UpdateSourceTrigger=PropertyChanged}"
+                                        <TextBox Text="{Binding InitialSlAmount, UpdateSourceTrigger=PropertyChanged}"
                                                  Width="44" IsEnabled="{Binding IsNotRunning}"
-                                                 ToolTip="Stop loss ticks (default 5)"/>
+                                                 ToolTip="Initial stop-loss in dollars (e.g. 10)"/>
                                     </StackPanel>
 
                                     <TextBlock Grid.Column="3" Text="Scale factor (k):"
@@ -408,19 +408,19 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
 
-                                    <TextBlock Grid.Column="0" Text="TP / SL (ticks):"
+                                    <TextBlock Grid.Column="0" Text="TP $ / SL $:"
                                                VerticalAlignment="Center"
                                                Foreground="{StaticResource TextSecondaryBrush}"
                                                Margin="0,0,8,0"/>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                        <TextBox Text="{Binding BtTakeProfitTicks, UpdateSourceTrigger=PropertyChanged}"
+                                        <TextBox Text="{Binding BtInitialTpAmount, UpdateSourceTrigger=PropertyChanged}"
                                                  Width="44" IsEnabled="{Binding IsNotBacktesting}"
-                                                 ToolTip="Take profit ticks"/>
+                                                 ToolTip="Initial take-profit in dollars (e.g. 20)"/>
                                         <TextBlock Text="/" VerticalAlignment="Center" Margin="5,0,5,0"
                                                    Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBox Text="{Binding BtStopLossTicks, UpdateSourceTrigger=PropertyChanged}"
+                                        <TextBox Text="{Binding BtInitialSlAmount, UpdateSourceTrigger=PropertyChanged}"
                                                  Width="44" IsEnabled="{Binding IsNotBacktesting}"
-                                                 ToolTip="Stop loss ticks"/>
+                                                 ToolTip="Initial stop-loss in dollars (e.g. 10)"/>
                                     </StackPanel>
                                 </Grid>
 

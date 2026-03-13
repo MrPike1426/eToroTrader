@@ -70,8 +70,8 @@ Namespace TopStepTrader.Services.Market
             Dim tfLabel = TimeframeLabel(timeframe)
 
             ' Date range as UTC DateTimeOffset  (endDate + 1 day makes end inclusive)
-            Dim fromDt = New DateTimeOffset(startDate, TimeSpan.Zero)
-            Dim toDt = New DateTimeOffset(endDate.AddDays(1), TimeSpan.Zero)
+            Dim fromDt = New DateTimeOffset(DateTime.SpecifyKind(startDate, DateTimeKind.Unspecified), TimeSpan.Zero)
+            Dim toDt = New DateTimeOffset(DateTime.SpecifyKind(endDate.AddDays(1), DateTimeKind.Unspecified), TimeSpan.Zero)
 
             ' ── Step 1: Check existing bars in SQLite ──────────────────────────────────
             progress?.Report($"⏳ Checking local {tfLabel} bars for {contractId}...")

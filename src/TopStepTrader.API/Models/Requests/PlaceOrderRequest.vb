@@ -72,6 +72,11 @@ Namespace TopStepTrader.API.Models.Requests
     ''' <summary>
     ''' Request body for PUT /api/v1/trading/execution/demo/positions/{positionId}
     ''' Updates the SL and/or TP of an already-open position.
+    ''' NOTE: this PUT endpoint is undocumented in the eToro public API spec.
+    '''       It has hidden minimum-distance constraints and may silently reject edits.
+    '''       Always pair with IsTslEnabled=True so eToro treats the update as a TSL
+    '''       reset rather than a raw manual SL move — the documented TSL path is more
+    '''       permissive about minimum distance.
     ''' </summary>
     Public Class EditPositionRequest
         <JsonPropertyName("StopLossRate")>
@@ -81,6 +86,15 @@ Namespace TopStepTrader.API.Models.Requests
         <JsonPropertyName("TakeProfitRate")>
         <JsonIgnore(Condition:=JsonIgnoreCondition.WhenWritingNull)>
         Public Property TakeProfitRate As Double?
+
+        ''' <summary>
+        ''' Re-enables eToro's native Trailing Stop Loss from the new StopLossRate level.
+        ''' Setting True makes eToro treat the update as a TSL-reset, which is more
+        ''' permissive than a raw SL edit and avoids silent minimum-distance rejections.
+        ''' </summary>
+        <JsonPropertyName("IsTslEnabled")>
+        <JsonIgnore(Condition:=JsonIgnoreCondition.WhenWritingNull)>
+        Public Property IsTslEnabled As Boolean?
     End Class
 
     ''' <summary>

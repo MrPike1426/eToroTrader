@@ -31,6 +31,7 @@ Namespace TopStepTrader.Services.Market
                 .Id = a.Id,
                 .Name = a.Name,
                 .Balance = a.Balance,
+                .TotalValue = a.TotalValue,
                 .CanTrade = a.CanTrade,
                 .IsVisible = a.IsVisible,
                 .StartingBalance = a.Balance

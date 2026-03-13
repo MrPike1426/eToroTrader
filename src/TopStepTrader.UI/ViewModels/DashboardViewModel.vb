@@ -71,7 +71,7 @@ Namespace TopStepTrader.UI.ViewModels
                     ' Update balance and account name when account selection changes
                     If value IsNot Nothing Then
                         AccountName = value.Name
-                        Balance = value.Balance
+                        Balance = value.TotalValue
                     End If
                 End If
             End Set
@@ -317,12 +317,12 @@ Namespace TopStepTrader.UI.ViewModels
                              SelectedAccount = If(practiceAccount, _accounts.FirstOrDefault())
                          End Sub)
 
-                ' Record current balance in history for selected account
+                ' Record current Total Value in history for selected account
                 If SelectedAccount IsNot Nothing Then
                     Await _balanceHistoryService.RecordBalanceAsync(
                         SelectedAccount.Id,
                         SelectedAccount.Name,
-                        SelectedAccount.Balance,
+                        SelectedAccount.TotalValue,
                         DateTime.UtcNow)
                 End If
 
@@ -357,7 +357,7 @@ Namespace TopStepTrader.UI.ViewModels
                              For Each account In accounts
                                  Dim row = New BalanceHistoryRow With {
                                      .AccountName = account.Name,
-                                     .CurrentBalance = account.Balance
+                                     .CurrentBalance = account.TotalValue
                                  }
 
                                  ' Populate history dates (last 5 days)

@@ -132,23 +132,25 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
-        Private _stopLossTicks As String = "10"
-        Public Property StopLossTicks As String
+        Private _initialSlAmount As String = "10"
+        ''' <summary>Initial stop-loss in dollars (Turtle bracket first SL level).</summary>
+        Public Property InitialSlAmount As String
             Get
-                Return _stopLossTicks
+                Return _initialSlAmount
             End Get
             Set(value As String)
-                SetProperty(_stopLossTicks, value)
+                SetProperty(_initialSlAmount, value)
             End Set
         End Property
 
-        Private _takeProfitTicks As String = "20"
-        Public Property TakeProfitTicks As String
+        Private _initialTpAmount As String = "20"
+        ''' <summary>Initial take-profit in dollars (Turtle bracket first TP level).</summary>
+        Public Property InitialTpAmount As String
             Get
-                Return _takeProfitTicks
+                Return _initialTpAmount
             End Get
             Set(value As String)
-                SetProperty(_takeProfitTicks, value)
+                SetProperty(_initialTpAmount, value)
             End Set
         End Property
 
@@ -503,6 +505,7 @@ Namespace TopStepTrader.UI.ViewModels
 
         Public ReadOnly Property SelectEmaRsiCombinedCommand As RelayCommand
         Public ReadOnly Property SelectMultiConfluenceEngineCommand As RelayCommand
+        Public ReadOnly Property SelectBbSqueezeScalperCommand As RelayCommand
         Public ReadOnly Property RunCommand As RelayCommand
         Public ReadOnly Property CancelCommand As RelayCommand
         Public ReadOnly Property LoadHistoryCommand As RelayCommand
@@ -533,6 +536,7 @@ Namespace TopStepTrader.UI.ViewModels
             ' Single-indicator strategies excluded per TICKET-006 design decision.
             AvailableStrategies.Add("EMA/RSI Combined")
             AvailableStrategies.Add("Multi-Confluence Engine")
+            AvailableStrategies.Add("BB Squeeze Scalper")
 
             ' Populate interval dropdown — only natively-supported ProjectX API timeframes.
             ' Removed: "3 min" (API falls back to 1-min), "10 min" (no API code), "4 hours" (no API code).
@@ -545,6 +549,7 @@ Namespace TopStepTrader.UI.ViewModels
 
             SelectEmaRsiCombinedCommand = New RelayCommand(AddressOf ApplyEmaRsiCombined)
             SelectMultiConfluenceEngineCommand = New RelayCommand(AddressOf ApplyMultiConfluenceEngine)
+            SelectBbSqueezeScalperCommand = New RelayCommand(AddressOf ApplyBbSqueezeScalper)
             RunCommand = New RelayCommand(AddressOf ExecuteRun, Function() CanRun)
             CancelCommand = New RelayCommand(AddressOf ExecuteCancel, Function() CanCancel)
             LoadHistoryCommand = New RelayCommand(AddressOf LoadPreviousRuns)
@@ -573,9 +578,8 @@ Namespace TopStepTrader.UI.ViewModels
             If defaults IsNot Nothing Then
                 InitialCapital = defaults.Capital
                 Quantity = defaults.Qty
-                ' StrategyDefaults.TakeProfitPct / StopLossPct are percentage strings for the
-                ' eToro live-trading path (e.g. "4.0" = 4%). Do NOT copy them into the backtest
-                ' tick fields — tick fields retain their own defaults (20 tp / 10 sl).
+                InitialTpAmount = defaults.InitialTpAmount
+                InitialSlAmount = defaults.InitialSlAmount
             End If
         End Sub
 
@@ -628,6 +632,35 @@ Namespace TopStepTrader.UI.ViewModels
                 "Exits are ATR-based: Stop Loss at the closer of 1.5×ATR14 or the Ichimoku cloud edge; " &
                 "Take Profit at 2:1 reward-to-risk based on the actual SL distance." & vbLf & vbLf &
                 "Recommended for: 15-min bars on commodity contracts (Gold, Oil). Signals are rare but high-quality."
+
+            HasStrategyDescription = True
+        End Sub
+
+        ''' <summary>
+        ''' One-click activate for BB Squeeze Scalper on the strategy card panel.
+        ''' Dual-mode Bollinger Band scalper on 1-minute bars with 15-second polling.
+        ''' Sets SelectedStrategyName (which triggers parameter auto-fill and bar download),
+        ''' then populates the plain-English description panel.
+        ''' </summary>
+        Private Sub ApplyBbSqueezeScalper()
+            SelectedStrategyName = "BB Squeeze Scalper"
+
+            ActiveStrategyText = "✔  BB Squeeze Scalper  (1-min bars · BB12 · %B · RSI7 · EMA5 · ATR10)"
+
+            StrategyNakedDescription =
+                "A dual-mode Bollinger Band scalping strategy designed for high-frequency, high-leverage micro-trades on 1-minute bars." & vbLf & vbLf &
+                "Every 15 seconds the strategy examines the latest completed 1-minute bar and calculates Bollinger Band Width " &
+                "(BBW = (Upper − Lower) / Middle × 100). If BBW has been below its 20-bar SMA for 3 or more consecutive bars, " &
+                "a SQUEEZE is active. When the squeeze fires and price closes outside the outer band — with the 5-period EMA slope " &
+                "confirming direction and RSI(7) above 50 for Long (below 50 for Short) — a BREAKOUT trade is placed in the " &
+                "breakout direction. This is Mode A: momentum scalp riding the volatility expansion." & vbLf & vbLf &
+                "When no squeeze is present (bands are wide), the strategy switches to Mode B: BAND BOUNCE. " &
+                "It calculates %B (position within the bands: 0 = lower, 1 = upper). " &
+                "If %B drops below 0 (price below the lower band), RSI(7) is below 25, and the bar has a " &
+                "rejection wick covering 60%+ of the range, a Long fires. The Short mirror applies above the upper band. " &
+                "This is mean-reversion — fading the extreme back toward the middle band." & vbLf & vbLf &
+                "Both modes share fixed exits: 0.4% TP and 0.2% SL (2:1 R:R). 5× leverage amplifies the scalp targets." & vbLf & vbLf &
+                "Defaults: 1-min bars · BB(12, 2.0) · 0.4% TP · 0.2% SL · 5× leverage."
 
             HasStrategyDescription = True
         End Sub
@@ -772,9 +805,10 @@ Namespace TopStepTrader.UI.ViewModels
                 ProgressText = "Invalid initial capital" : Return
             End If
 
-            Dim slTicks, tpTicks, qty As Integer
-            Integer.TryParse(_stopLossTicks, slTicks)
-            Integer.TryParse(_takeProfitTicks, tpTicks)
+            Dim slAmount, tpAmount As Decimal
+            Decimal.TryParse(_initialSlAmount, slAmount)
+            Decimal.TryParse(_initialTpAmount, tpAmount)
+            Dim qty As Integer
             Integer.TryParse(_quantity, qty)
 
             Dim conf As Single
@@ -790,8 +824,8 @@ Namespace TopStepTrader.UI.ViewModels
                 .StartDate = _startDate,
                 .EndDate = _endDate,
                 .InitialCapital = capital,
-                .StopLossTicks = If(slTicks > 0, slTicks, 20),
-                .TakeProfitTicks = If(tpTicks > 0, tpTicks, 40),
+                .InitialSlAmount = If(slAmount > 0, slAmount, 10D),
+                .InitialTpAmount = If(tpAmount > 0, tpAmount, 20D),
                 .MinSignalConfidence = If(conf > 0, conf, 0.65F),
                 .Quantity = If(qty > 0, qty, 1),
                 .TickSize = GetTickSize(contractId),

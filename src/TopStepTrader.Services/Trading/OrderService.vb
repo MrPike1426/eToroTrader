@@ -66,7 +66,8 @@ Namespace TopStepTrader.Services.Trading
                         .Leverage = If(order.Leverage > 0, order.Leverage, 1),
                         .Amount = CDbl(order.Amount.Value),
                         .StopLossRate = If(order.StopLossRate.HasValue, CDbl(order.StopLossRate.Value), CType(Nothing, Double?)),
-                        .TakeProfitRate = If(order.TakeProfitRate.HasValue, CDbl(order.TakeProfitRate.Value), CType(Nothing, Double?))
+                        .TakeProfitRate = If(order.TakeProfitRate.HasValue, CDbl(order.TakeProfitRate.Value), CType(Nothing, Double?)),
+                        .IsTslEnabled = If(order.IsTslEnabled, CType(True, Boolean?), CType(Nothing, Boolean?))
                     }
                     response = Await _orderClient.PlaceOrderByAmountAsync(req)
                 Else
@@ -77,7 +78,8 @@ Namespace TopStepTrader.Services.Trading
                         .Leverage = If(order.Leverage > 0, order.Leverage, 1),
                         .AmountInUnits = CDbl(order.Quantity),
                         .StopLossRate = If(order.StopLossRate.HasValue, CDbl(order.StopLossRate.Value), CType(Nothing, Double?)),
-                        .TakeProfitRate = If(order.TakeProfitRate.HasValue, CDbl(order.TakeProfitRate.Value), CType(Nothing, Double?))
+                        .TakeProfitRate = If(order.TakeProfitRate.HasValue, CDbl(order.TakeProfitRate.Value), CType(Nothing, Double?)),
+                        .IsTslEnabled = If(order.IsTslEnabled, CType(True, Boolean?), CType(Nothing, Boolean?))
                     }
                     response = Await _orderClient.PlaceOrderByUnitsAsync(req)
                 End If
@@ -120,20 +122,11 @@ Namespace TopStepTrader.Services.Trading
             Try
                 Dim info = Await _orderClient.GetOrderInfoAsync(order.ExternalOrderId.Value)
 
-                ' eToro returns errorCode > 0 (and statusID = 4) when the order is rejected
-                ' after initial acceptance (e.g. errorCode 720 = below minimum position amount).
-                If info IsNot Nothing AndAlso info.ErrorCode > 0 Then
-                    Dim msg = If(String.IsNullOrWhiteSpace(info.ErrorMessage),
-                                 $"eToro errorCode={info.ErrorCode}",
-                                 info.ErrorMessage)
-                    _logger.LogWarning("eToro order {Id} rejected post-submission: [{Code}] {Msg}",
-                                       order.ExternalOrderId, info.ErrorCode, msg)
-                    order.Status = OrderStatus.Rejected
-                    Await _orderRepo.UpdateOrderStatusAsync(order.Id, order.Status, order.ExternalOrderId)
-                    RaiseEvent OrderRejected(Me, New OrderRejectedEventArgs(order, msg))
-                    Return
-                End If
-
+                ' eToro sometimes returns errorCode > 0 as a soft-error even when the position was
+                ' actually created (e.g. the requested SL was below the instrument minimum distance
+                ' and eToro widened it silently).  Check for a real position FIRST — if one exists,
+                ' treat the order as filled regardless of the error code so the engine does not lose
+                ' track of a live open position.  Only reject when no position was created at all.
                 Dim pos = info?.Positions?.FirstOrDefault()
                 If pos IsNot Nothing Then
                     order.ExternalPositionId = pos.PositionId
@@ -141,8 +134,25 @@ Namespace TopStepTrader.Services.Trading
                     order.FilledAt = DateTimeOffset.UtcNow
                     order.Status = OrderStatus.Filled
                     Await _orderRepo.UpdateOrderStatusAsync(order.Id, order.Status, order.ExternalOrderId)
-                    _logger.LogInformation("Position resolved: positionId={PosId} fillPrice={Price}",
-                                           order.ExternalPositionId, order.FillPrice)
+                    If info IsNot Nothing AndAlso info.ErrorCode > 0 Then
+                        Dim softMsg = If(String.IsNullOrWhiteSpace(info.ErrorMessage),
+                                         $"eToro errorCode={info.ErrorCode}",
+                                         info.ErrorMessage)
+                        _logger.LogWarning("eToro order {Id} had errorCode but position {PosId} was created — treating as filled. Soft-error: {Msg}",
+                                           order.ExternalOrderId, pos.PositionId, softMsg)
+                    Else
+                        _logger.LogInformation("Position resolved: positionId={PosId} fillPrice={Price}",
+                                               order.ExternalPositionId, order.FillPrice)
+                    End If
+                ElseIf info IsNot Nothing AndAlso info.ErrorCode > 0 Then
+                    Dim msg = If(String.IsNullOrWhiteSpace(info.ErrorMessage),
+                                 $"eToro errorCode={info.ErrorCode}",
+                                 info.ErrorMessage)
+                    _logger.LogWarning("eToro order {Id} rejected post-submission (no position created): [{Code}] {Msg}",
+                                       order.ExternalOrderId, info.ErrorCode, msg)
+                    order.Status = OrderStatus.Rejected
+                    Await _orderRepo.UpdateOrderStatusAsync(order.Id, order.Status, order.ExternalOrderId)
+                    RaiseEvent OrderRejected(Me, New OrderRejectedEventArgs(order, msg))
                 End If
             Catch ex As Exception
                 _logger.LogWarning(ex, "Could not resolve positionId for orderId={Id}", order.ExternalOrderId)
@@ -307,7 +317,7 @@ Namespace TopStepTrader.Services.Trading
 
                 Return New LivePositionSnapshot With {
                     .PositionId = rep.PositionId,
-                    .UnrealizedPnlUsd = 0D,
+                    .UnrealizedPnlUsd = CDec(matchList.Sum(Function(p) p.PnL)),
                     .OpenedAtUtc = openedAt,
                     .IsBuy = rep.IsBuy,
                     .Amount = CDec(totalAmount),
@@ -355,22 +365,26 @@ Namespace TopStepTrader.Services.Trading
         Public Async Function EditPositionSlTpAsync(positionId As Long,
                                                      slRate As Decimal?,
                                                      tpRate As Decimal?,
+                                                     Optional enableTsl As Boolean = False,
                                                      Optional cancel As CancellationToken = Nothing) As Task(Of Boolean) _
             Implements IOrderService.EditPositionSlTpAsync
             Try
                 Dim req = New EditPositionRequest With {
                     .StopLossRate = If(slRate.HasValue, CDbl(slRate.Value), CType(Nothing, Double?)),
-                    .TakeProfitRate = If(tpRate.HasValue, CDbl(tpRate.Value), CType(Nothing, Double?))
+                    .TakeProfitRate = If(tpRate.HasValue, CDbl(tpRate.Value), CType(Nothing, Double?)),
+                    .IsTslEnabled = If(enableTsl, CType(True, Boolean?), CType(Nothing, Boolean?))
                 }
                 Dim resp = Await _orderClient.EditPositionAsync(positionId, req, cancel)
+                Dim tslStr = If(enableTsl, " TSL=on", String.Empty)
                 If resp.Success Then
-                    _logger.LogInformation("EditPositionSlTp: updated positionId={PosId} SL={SL} TP={TP}",
+                    _logger.LogInformation("EditPositionSlTp: updated positionId={PosId} SL={SL} TP={TP}{Tsl}",
                                            positionId,
                                            If(slRate.HasValue, slRate.Value.ToString("F4"), "none"),
-                                           If(tpRate.HasValue, tpRate.Value.ToString("F4"), "none"))
+                                           If(tpRate.HasValue, tpRate.Value.ToString("F4"), "none"),
+                                           tslStr)
                 Else
-                    _logger.LogWarning("EditPositionSlTp: API rejected update for positionId={PosId}: {Msg}",
-                                       positionId, resp.ErrorMessage)
+                    _logger.LogWarning("EditPositionSlTp: API rejected update for positionId={PosId}{Tsl}: {Msg}",
+                                       positionId, tslStr, resp.ErrorMessage)
                 End If
                 Return resp.Success
             Catch ex As Exception

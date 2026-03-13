@@ -491,11 +491,11 @@ Namespace TopStepTrader.Tests.Backtest
         End Function
 
         ''' <summary>Build a minimal BacktestConfiguration for metric tests.</summary>
-        Private Shared Function MakeConfig(Optional slTicks As Integer = 10,
-                                            Optional tpTicks As Integer = 20) As BacktestConfiguration
+        Private Shared Function MakeConfig(Optional slTicks As Decimal = 10D,
+                                            Optional tpTicks As Decimal = 20D) As BacktestConfiguration
             Return New BacktestConfiguration With {
-                .StopLossTicks = slTicks,
-                .TakeProfitTicks = tpTicks,
+                .InitialSlAmount = slTicks,
+                .InitialTpAmount = tpTicks,
                 .RunName = "Unit Test",
                 .ContractId = "CON.F.US.MES.H26",
                 .StartDate = Date.Today.AddDays(-7),

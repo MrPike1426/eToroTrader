@@ -44,10 +44,18 @@ Namespace TopStepTrader.API.Http
             Optional cancel As CancellationToken = Nothing) As Task(Of AccountSearchResponse)
 
             Dim portfolio = Await GetPortfolioAsync(cancel)
+            Dim totalInvestedPlusPnl As Decimal = 0D
+            If portfolio?.ClientPortfolio?.Positions IsNot Nothing Then
+                For Each pos In portfolio.ClientPortfolio.Positions
+                    totalInvestedPlusPnl += CDec(pos.Amount) + CDec(pos.PnL)
+                Next
+            End If
+            Dim credit = CDec(portfolio?.ClientPortfolio?.Credit)
             Dim dto = New AccountDto With {
                 .Id = 1L,
                 .Name = "eToro Demo Account",
-                .Balance = CDec(portfolio?.ClientPortfolio?.Credit),
+                .Balance = credit,
+                .TotalValue = credit + totalInvestedPlusPnl,
                 .CanTrade = True,
                 .IsVisible = True
             }

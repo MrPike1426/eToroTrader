@@ -89,23 +89,25 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
-        Private _takeProfitPct As Decimal = 4.0D
-        Public Property TakeProfitPct As Decimal
+        Private _initialTpAmount As Decimal = 20D
+        ''' <summary>Initial take-profit in dollars. Turtle bracket first TP level. Default $20.</summary>
+        Public Property InitialTpAmount As Decimal
             Get
-                Return _takeProfitPct
+                Return _initialTpAmount
             End Get
             Set(value As Decimal)
-                SetProperty(_takeProfitPct, Math.Max(0D, value))
+                SetProperty(_initialTpAmount, Math.Max(0D, value))
             End Set
         End Property
 
-        Private _stopLossPct As Decimal = 1.5D
-        Public Property StopLossPct As Decimal
+        Private _initialSlAmount As Decimal = 10D
+        ''' <summary>Initial stop-loss in dollars. Turtle bracket first SL level. Default $10.</summary>
+        Public Property InitialSlAmount As Decimal
             Get
-                Return _stopLossPct
+                Return _initialSlAmount
             End Get
             Set(value As Decimal)
-                SetProperty(_stopLossPct, Math.Max(0D, value))
+                SetProperty(_initialSlAmount, Math.Max(0D, value))
             End Set
         End Property
 
@@ -183,6 +185,7 @@ Namespace TopStepTrader.UI.ViewModels
         Public ReadOnly Property SelectEmaRsiCombinedCommand As RelayCommand
         Public ReadOnly Property SelectMultiConfluenceEngineCommand As RelayCommand
         Public ReadOnly Property SelectLultDivergenceCommand As RelayCommand
+        Public ReadOnly Property SelectBbSqueezeScalperCommand As RelayCommand
         Public ReadOnly Property StartCommand As RelayCommand
         Public ReadOnly Property StopCommand As RelayCommand
 
@@ -221,6 +224,10 @@ Namespace TopStepTrader.UI.ViewModels
                 Sub(p) ApplyLultDivergence(),
                 Function(p) IsFormReady AndAlso IsNotRunning)
 
+            SelectBbSqueezeScalperCommand = New RelayCommand(
+                Sub(p) ApplyBbSqueezeScalper(),
+                Function(p) IsFormReady AndAlso IsNotRunning)
+
             StartCommand = New RelayCommand(
                 AddressOf ExecuteStart,
                 Function(p) HasParsedStrategy AndAlso IsNotRunning AndAlso SelectedAccount IsNot Nothing)
@@ -236,7 +243,7 @@ Namespace TopStepTrader.UI.ViewModels
                                      assetVm As HydraAssetViewModel)
             AddHandler engine.ConfidenceUpdated,
                 Sub(s As Object, e As ConfidenceUpdatedEventArgs)
-                    Dispatch(Sub() assetVm.ApplyConfidence(e.UpPct, e.DownPct, e.AdxGatePassed, e.AdxValue, e.LastClose))
+                    Dispatch(Sub() assetVm.ApplyConfidence(e))
                 End Sub
 
             AddHandler engine.LogMessage,
@@ -301,8 +308,8 @@ Namespace TopStepTrader.UI.ViewModels
         ''' — satisfying the "runs 24/7" requirement.
         ''' </summary>
         Private Sub ApplyEmaRsiCombined()
-            TakeProfitPct = 4.0D
-            StopLossPct = 1.5D
+            InitialTpAmount = 20D
+            InitialSlAmount = 10D
             Leverage = 5
 
             _currentStrategy = New StrategyDefinition With {
@@ -318,8 +325,8 @@ Namespace TopStepTrader.UI.ViewModels
                 .DurationHours = 8760,
                 .CapitalAtRisk = _capitalAtRisk,
                 .Quantity = 1,
-                .TakeProfitPct = _takeProfitPct,
-                .StopLossPct = _stopLossPct,
+                .InitialTpAmount = _initialTpAmount,
+                .InitialSlAmount = _initialSlAmount,
                 .Leverage = _leverage,
                 .ScaleInAmount = 200D,
                 .ScaleInLeverage = 5,
@@ -332,20 +339,20 @@ Namespace TopStepTrader.UI.ViewModels
             LogEntries.Clear()
             LogLine("─────────────────────────────────────────────────────────────────────")
             LogLine("Configure account + risk settings above, then click  ▶ Start Monitoring.")
-            LogLine($"• 5-min bars · TP={_takeProfitPct:F1}% · SL={_stopLossPct:F1}% · Amt=${_capitalAtRisk:F0} · Lvg={_leverage}× · Confidence={_minConfidencePct}%")
+            LogLine($"• 5-min bars · TP=${_initialTpAmount:F0} · SL=${_initialSlAmount:F0} · Amt=${_capitalAtRisk:F0} · Lvg={_leverage}× · Confidence={_minConfidencePct}%")
             LogLine("• 5 independent sessions — BTC · ETH · XRP · SOL · BNB")
             LogLine("━━━  EMA/RSI Combined — CryptoJoe 5-Asset Monitor  ━━━")
         End Sub
 
         ''' <summary>
         ''' Activates the Multi-Confluence Engine strategy for all 5 crypto assets.
-        ''' Uses ATR-derived SL/TP (TakeProfitPct = 0, StopLossPct = 0 so the engine
-        ''' computes absolute prices from 1.5×ATR / 3×ATR at entry time).
+        ''' Uses Turtle bracket (InitialTpAmount = $20, InitialSlAmount = $10) as the
+        ''' initial bracket; bracket advances on each TP hit using 0.5×N ATR steps.
         ''' DurationHours = 8 760 so sessions never auto-expire.
         ''' </summary>
         Private Sub ApplyMultiConfluenceEngine()
-            TakeProfitPct = 0D
-            StopLossPct = 0D
+            InitialTpAmount = 20D
+            InitialSlAmount = 10D
             Leverage = 5
 
             _currentStrategy = New StrategyDefinition With {
@@ -361,8 +368,8 @@ Namespace TopStepTrader.UI.ViewModels
                 .DurationHours = 8760,
                 .CapitalAtRisk = _capitalAtRisk,
                 .Quantity = 1,
-                .TakeProfitPct = 0D,
-                .StopLossPct = 0D,
+                .InitialTpAmount = _initialTpAmount,
+                .InitialSlAmount = _initialSlAmount,
                 .Leverage = _leverage,
                 .ScaleInAmount = 200D,
                 .ScaleInLeverage = 5,
@@ -384,14 +391,14 @@ Namespace TopStepTrader.UI.ViewModels
         ''' <summary>
         ''' Activates the LULT Divergence strategy for all 5 crypto assets.
         ''' Uses WaveTrend (Market Cipher B) Anchor/Trigger divergence on 5-minute bars.
-        ''' SL is computed from the trigger wave extreme ± ATR-scaled buffer at signal time;
-        ''' TP = 2R.  TakeProfitPct = 0 and StopLossPct = 0 so the engine takes the
-        ''' LULT-specific PlaceBracketOrdersAsync override path.
+        ''' Uses Turtle bracket (InitialTpAmount = $20, InitialSlAmount = $10) with
+        ''' LULT-specific ATR-derived SL/TP anchored to WaveTrend divergence levels.
+        ''' Bracket advances on each TP hit; SL never retreats.
         ''' Time filter: 11:00–17:00 UTC (London + NY pre-market, 07:00–13:00 EST/EDT).
         ''' </summary>
         Private Sub ApplyLultDivergence()
-            TakeProfitPct = 0D
-            StopLossPct = 0D
+            InitialTpAmount = 20D
+            InitialSlAmount = 10D
             Leverage = 5
 
             _currentStrategy = New StrategyDefinition With {
@@ -407,8 +414,8 @@ Namespace TopStepTrader.UI.ViewModels
                 .DurationHours = 8760,
                 .CapitalAtRisk = _capitalAtRisk,
                 .Quantity = 1,
-                .TakeProfitPct = 0D,
-                .StopLossPct = 0D,
+                .InitialTpAmount = _initialTpAmount,
+                .InitialSlAmount = _initialSlAmount,
                 .Leverage = _leverage,
                 .ScaleInAmount = 0D,
                 .ScaleInLeverage = 1,
@@ -426,6 +433,51 @@ Namespace TopStepTrader.UI.ViewModels
             LogLine("• Time filter: 11:00–17:00 UTC (07:00–13:00 EST/EDT) — London + NY pre-market")
             LogLine("• 5 independent sessions — BTC · ETH · XRP · SOL · BNB")
             LogLine("━━━  LULT Divergence — CryptoJoe 5-Asset Monitor  ━━━")
+        End Sub
+
+        ''' <summary>
+        ''' Activates the BB Squeeze Scalper strategy for all 5 crypto assets.
+        ''' Dual-mode Bollinger Band scalper on 1-minute bars with 15-second polling.
+        ''' Crypto trades 24/7 — IsOrderingAllowed is always True in CryptoStrategyExecutionEngine.
+        ''' DurationHours = 8 760 so sessions never auto-expire.
+        ''' </summary>
+        Private Sub ApplyBbSqueezeScalper()
+            InitialTpAmount = 8D
+            InitialSlAmount = 4D
+            Leverage = 5
+
+            _currentStrategy = New StrategyDefinition With {
+                .Name = "BB Squeeze Scalper",
+                .Indicator = StrategyIndicatorType.BbSqueezeScalper,
+                .Condition = StrategyConditionType.BbSqueezeScalper,
+                .IndicatorPeriod = 25,
+                .SecondaryPeriod = 0,
+                .IndicatorMultiplier = 2.0,
+                .GoLongWhenBelowBands = True,
+                .GoShortWhenAboveBands = True,
+                .TimeframeMinutes = 1,
+                .DurationHours = 8760,
+                .CapitalAtRisk = _capitalAtRisk,
+                .Quantity = 1,
+                .InitialTpAmount = _initialTpAmount,
+                .InitialSlAmount = _initialSlAmount,
+                .Leverage = _leverage,
+                .ScaleInAmount = 0D,
+                .ScaleInLeverage = 1,
+                .MinConfidencePct = _minConfidencePct
+            }
+
+            HasParsedStrategy = True
+            ActiveStrategyText = "✔  BB Squeeze Scalper  (1-min · 24/7 · BB12 · %B · RSI7 · EMA5)"
+
+            LogEntries.Clear()
+            LogLine("─────────────────────────────────────────────────────────────────────")
+            LogLine("Configure account + risk settings above, then click  ▶ Start Monitoring.")
+            LogLine($"• 1-min bars · TP=${_initialTpAmount:F0} · SL=${_initialSlAmount:F0} · Amt=${_capitalAtRisk:F0} · Lvg={_leverage}× · 15s polling")
+            LogLine("• Mode B (Band Bounce): %B < 0 or > 1 + RSI7 extreme + rejection wick ≥ 60%")
+            LogLine("• Mode A (Squeeze Breakout): BBW < SMA(BBW,20) ≥3 bars + band break + EMA5 + RSI7")
+            LogLine("• 5 independent sessions — BTC · ETH · XRP · SOL · BNB")
+            LogLine("━━━  BB Squeeze Scalper — CryptoJoe 5-Asset Monitor  ━━━")
         End Sub
 
         ' ── Command handlers ──────────────────────────────────────────────────────
@@ -455,8 +507,8 @@ Namespace TopStepTrader.UI.ViewModels
                     .AccountId = SelectedAccount.Id,
                     .CapitalAtRisk = _capitalAtRisk,
                     .Quantity = 1,
-                    .TakeProfitPct = _takeProfitPct,
-                    .StopLossPct = _stopLossPct,
+                    .InitialTpAmount = _initialTpAmount,
+                    .InitialSlAmount = _initialSlAmount,
                     .Leverage = _leverage,
                     .ScaleInAmount = _currentStrategy.ScaleInAmount,
                     .ScaleInLeverage = _currentStrategy.ScaleInLeverage,

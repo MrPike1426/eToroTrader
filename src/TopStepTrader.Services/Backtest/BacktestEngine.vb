@@ -57,8 +57,8 @@ Namespace TopStepTrader.Services.Backtest
                                    config.RunName, config.StartDate, config.EndDate)
 
             ' Load bars for the configured date range — GetBarsAsync returns domain MarketBar objects
-            Dim from As DateTimeOffset = New DateTimeOffset(config.StartDate, TimeSpan.Zero)
-            Dim [to] As DateTimeOffset = New DateTimeOffset(config.EndDate, TimeSpan.Zero).AddDays(1)
+            Dim from As DateTimeOffset = New DateTimeOffset(DateTime.SpecifyKind(config.StartDate, DateTimeKind.Unspecified), TimeSpan.Zero)
+            Dim [to] As DateTimeOffset = New DateTimeOffset(DateTime.SpecifyKind(config.EndDate, DateTimeKind.Unspecified), TimeSpan.Zero).AddDays(1)
             Dim filteredBars = Await _barRepository.GetBarsAsync(
                 config.ContractId, CType(config.Timeframe, BarTimeframe), from, [to], cancel)
 
@@ -89,6 +89,65 @@ Namespace TopStepTrader.Services.Backtest
                 ema8Series = TechnicalIndicators.EMA(allCloses, 8)    ' valid from index 7
             End If
 
+            ' ── QuantLab strategies — pre-calculate indicator series ─────────────
+
+            ' ConnorsRsi2 (=11): RSI(2), SMA(5), SMA(200)
+            Dim qlRsi2 As Single() = Nothing
+            Dim qlSma5 As Single() = Nothing
+            Dim qlSma200 As Single() = Nothing
+            If config.StrategyCondition = StrategyConditionType.ConnorsRsi2 Then
+                qlRsi2 = TechnicalIndicators.Rsi2(allCloses)          ' valid from index 2
+                qlSma5 = TechnicalIndicators.SMA(allCloses, 5)        ' valid from index 4
+                qlSma200 = TechnicalIndicators.SMA(allCloses, 200)    ' valid from index 199
+            End If
+
+            ' SuperTrend (=12): ATR(10) × 3.0 multiplier
+            Dim qlStLine As Single() = Nothing
+            Dim qlStDir As Single() = Nothing
+            Dim qlStAtr10 As Single() = Nothing    ' pre-calculated ATR(10) for TP sizing
+            If config.StrategyCondition = StrategyConditionType.SuperTrend Then
+                Dim stResult = TechnicalIndicators.SuperTrend(allHighs, allLows, allCloses, 10, 3.0)
+                qlStLine = stResult.Line
+                qlStDir = stResult.Direction
+                qlStAtr10 = TechnicalIndicators.ATR(allHighs, allLows, allCloses, 10)
+            End If
+
+            ' DonchianBreakout (=13): 20-bar Donchian channel + 10-bar exit channel
+            Dim qlDonUpper20 As Single() = Nothing
+            Dim qlDonLower20 As Single() = Nothing
+            Dim qlDonMid10 As Single() = Nothing
+            If config.StrategyCondition = StrategyConditionType.DonchianBreakout Then
+                Dim don20 = TechnicalIndicators.DonchianChannel(allHighs, allLows, 20)
+                qlDonUpper20 = don20.Upper
+                qlDonLower20 = don20.Lower
+                Dim don10 = TechnicalIndicators.DonchianChannel(allHighs, allLows, 10)
+                qlDonMid10 = don10.Middle     ' exit when close crosses mid of 10-bar channel
+            End If
+
+            ' BbRsiMeanReversion (=14): BB(20,2) + RSI(14) — both already computed above
+            ' (ema21/rsi14 series already available; BB needs its own pre-calc)
+            Dim qlBbUpper As Single() = Nothing
+            Dim qlBbMiddle As Single() = Nothing
+            Dim qlBbLower As Single() = Nothing
+            If config.StrategyCondition = StrategyConditionType.BbRsiMeanReversion Then
+                Dim bb20 = TechnicalIndicators.BollingerBands(allCloses, 20, 2.0)
+                qlBbUpper = bb20.Upper
+                qlBbMiddle = bb20.Middle
+                qlBbLower = bb20.Lower
+            End If
+
+            ' State: open SuperTrend SL/TP prices (price-level exit, like MultiConfluence)
+            Dim qlStOpenSlPrice As Decimal = 0D
+            Dim qlStOpenTpPrice As Decimal = 0D
+            Dim qlStIsLong As Boolean = True
+            Dim qlStPrevDir As Single = 0.0F   ' previous SuperTrend direction for flip detection
+
+            ' State: open Donchian / BbRsi exit levels
+            Dim qlDonOpenMidExit As Decimal = 0D    ' adverse mid-channel level at entry
+            Dim qlDonIsLong As Boolean = True
+            Dim qlBbOpenMidExit As Decimal = 0D     ' BB middle band (SMA20) at entry
+            Dim qlBbIsLong As Boolean = True
+
             ' MultiConfluence — pre-calculate full indicator series once for all bars.
             ' Senkou Span B needs senkouBPeriod(52) + displacement(26) = 78 bars minimum.
             Dim mcIchiTenkan As Single() = Nothing
@@ -118,7 +177,17 @@ Namespace TopStepTrader.Services.Backtest
 
             ' Warm-up: EMA50 needs 50 bars; add 5-bar buffer so EMA21Prev also valid.
             ' MultiConfluence warm-up: Senkou Span B + displacement = 78 bars (80 with buffer).
-            Dim warmUp = If(config.StrategyCondition = StrategyConditionType.MultiConfluence, 80, 55)
+            ' ConnorsRsi2 warm-up: SMA(200) needs 200 bars; add 5-bar buffer = 205.
+            ' SuperTrend/DonchianBreakout/BbRsiMeanReversion warm-up: 25 bars is sufficient.
+            Dim warmUp As Integer
+            Select Case config.StrategyCondition
+                Case StrategyConditionType.MultiConfluence
+                    warmUp = 80
+                Case StrategyConditionType.ConnorsRsi2
+                    warmUp = 205
+                Case Else
+                    warmUp = 55
+            End Select
 
             Dim trades As New List(Of BacktestTrade)()
             Dim capital = config.InitialCapital
@@ -155,10 +224,84 @@ Namespace TopStepTrader.Services.Backtest
 
                 ' ── Check exit for open position ──────────────────────────────────
                 ' TP/SL levels are anchored to the first leg's entry price; all legs exit together.
-                ' MultiConfluence uses ATR-based price-level checks; all others use tick-based config.
+                ' MultiConfluence / SuperTrend use ATR-based price-level checks.
+                ' DonchianBreakout / BbRsiMeanReversion use indicator-level exits.
+                ' All others use tick-based config.
                 If openLegs.Count > 0 Then
                     Dim exitReason As String = Nothing
                     Dim exitPrice As Decimal = bar.Close
+
+                    ' ── SuperTrend price-level exit ────────────────────────────────
+                    If config.StrategyCondition = StrategyConditionType.SuperTrend AndAlso qlStOpenSlPrice <> 0D Then
+                        If qlStIsLong Then
+                            If bar.Low <= qlStOpenSlPrice Then
+                                exitReason = "StopLoss"
+                                exitPrice = qlStOpenSlPrice
+                            ElseIf bar.High >= qlStOpenTpPrice Then
+                                exitReason = "TakeProfit"
+                                exitPrice = qlStOpenTpPrice
+                            End If
+                        Else
+                            If bar.High >= qlStOpenSlPrice Then
+                                exitReason = "StopLoss"
+                                exitPrice = qlStOpenSlPrice
+                            ElseIf bar.Low <= qlStOpenTpPrice Then
+                                exitReason = "TakeProfit"
+                                exitPrice = qlStOpenTpPrice
+                            End If
+                        End If
+                    End If
+
+                    ' ── DonchianBreakout indicator-level exit ──────────────────────
+                    If exitReason Is Nothing AndAlso
+                       config.StrategyCondition = StrategyConditionType.DonchianBreakout AndAlso
+                       qlDonOpenMidExit <> 0D Then
+                        If qlDonIsLong AndAlso bar.Close < qlDonOpenMidExit Then
+                            exitReason = "NeutralExit"
+                        ElseIf Not qlDonIsLong AndAlso bar.Close > qlDonOpenMidExit Then
+                            exitReason = "NeutralExit"
+                        End If
+                    End If
+
+                    ' ── BbRsiMeanReversion indicator-level exit ────────────────────
+                    ' Exit Long when close >= BB middle (SMA20) or RSI crosses back above 50.
+                    ' Exit Short when close <= BB middle (SMA20) or RSI crosses back below 50.
+                    If exitReason Is Nothing AndAlso
+                       config.StrategyCondition = StrategyConditionType.BbRsiMeanReversion AndAlso
+                       qlBbOpenMidExit <> 0D Then
+                        Dim rsiExitVal = If(qlBbIsLong,
+                                            rsi14Series(i) <= 50.0F,   ' long: exit when RSI reverses ≤ 50
+                                            rsi14Series(i) >= 50.0F)   ' short: exit when RSI reverses ≥ 50
+                        If qlBbIsLong AndAlso
+                           (bar.Close >= qlBbOpenMidExit OrElse
+                            (Not Single.IsNaN(rsi14Series(i)) AndAlso rsiExitVal)) Then
+                            exitReason = "TakeProfit"
+                        ElseIf Not qlBbIsLong AndAlso
+                               (bar.Close <= qlBbOpenMidExit OrElse
+                                (Not Single.IsNaN(rsi14Series(i)) AndAlso rsiExitVal)) Then
+                            exitReason = "TakeProfit"
+                        End If
+                    End If
+
+                    ' ── ConnorsRsi2 RSI-based exit ─────────────────────────────────
+                    ' Exit Long when close > SMA(5) or RSI(2) > 65.
+                    ' Exit Short when close < SMA(5) or RSI(2) < 35.
+                    If exitReason Is Nothing AndAlso
+                       config.StrategyCondition = StrategyConditionType.ConnorsRsi2 AndAlso
+                       qlRsi2 IsNot Nothing AndAlso qlSma5 IsNot Nothing Then
+                        If Not (Single.IsNaN(qlRsi2(i)) OrElse Single.IsNaN(qlSma5(i))) Then
+                            If openLegs(0).Side = "Buy" Then
+                                If bar.Close > CDec(qlSma5(i)) OrElse qlRsi2(i) > 65.0F Then
+                                    exitReason = "TakeProfit"
+                                End If
+                            Else
+                                If bar.Close < CDec(qlSma5(i)) OrElse qlRsi2(i) < 35.0F Then
+                                    exitReason = "TakeProfit"
+                                End If
+                            End If
+                        End If
+                    End If
+
                     If config.StrategyCondition = StrategyConditionType.MultiConfluence AndAlso mcOpenSlPrice <> 0D Then
                         If mcIsLong Then
                             If bar.Low <= mcOpenSlPrice Then
@@ -177,7 +320,7 @@ Namespace TopStepTrader.Services.Backtest
                                 exitPrice = mcOpenTpPrice
                             End If
                         End If
-                    Else
+                     ElseIf exitReason Is Nothing Then
                         exitReason = BacktestMetrics.CheckExit(openLegs(0), bar, config)
                         If exitReason IsNot Nothing Then
                             exitPrice = BacktestMetrics.GetExitPrice(openLegs(0), bar, exitReason, config)
@@ -201,6 +344,11 @@ Namespace TopStepTrader.Services.Backtest
                         openLegs.Clear()
                         mcOpenSlPrice = 0D
                         mcOpenTpPrice = 0D
+                        ' Clear QuantLab state
+                        qlStOpenSlPrice = 0D
+                        qlStOpenTpPrice = 0D
+                        qlDonOpenMidExit = 0D
+                        qlBbOpenMidExit = 0D
                     End If
                 End If
 
@@ -286,7 +434,7 @@ Namespace TopStepTrader.Services.Backtest
                         Dim lcl2 = (mcLastClose > CDec(mcEma21Val))
                         Dim lcl3 = (mcTenkan > mcKijun)
                         Dim lcl4 = (mcLagIdx >= 0 AndAlso mcLastClose > mcLagClose)
-                        Dim lcl5 = (mcAdxVal >= 25.0F AndAlso mcPlusDIVal > mcMinusDIVal)
+                        Dim lcl5 = (mcAdxVal >= 19.9F AndAlso mcPlusDIVal > mcMinusDIVal)
                         Dim lcl6 = (mcHistNow > 0 AndAlso mcHistNow > mcHistPrev)
                         Dim lcl7 = (mcStochK < 0.8F)
 
@@ -295,7 +443,7 @@ Namespace TopStepTrader.Services.Backtest
                         Dim scl2 = (mcLastClose < CDec(mcEma21Val))
                         Dim scl3 = (mcTenkan < mcKijun)
                         Dim scl4 = (mcLagIdx >= 0 AndAlso mcLastClose < mcLagClose)
-                        Dim scl5 = (mcAdxVal >= 25.0F AndAlso mcMinusDIVal > mcPlusDIVal)
+                        Dim scl5 = (mcAdxVal >= 19.9F AndAlso mcMinusDIVal > mcPlusDIVal)
                         Dim scl6 = (mcHistNow < 0 AndAlso mcHistNow < mcHistPrev)
                         Dim scl7 = (mcStochK > 0.2F)
 
@@ -339,12 +487,178 @@ Namespace TopStepTrader.Services.Backtest
                     Continue For  ' skip EMA/RSI block for this bar
                 End If
 
+                ' ── ConnorsRsi2 signal ────────────────────────────────────────────
+                ' Long: RSI(2) < 10 AND close > SMA(200) — short-term dip in long-term uptrend.
+                ' Short: RSI(2) > 90 AND close < SMA(200) — short-term rally in long-term downtrend.
+                If openLegs.Count = 0 AndAlso
+                   config.StrategyCondition = StrategyConditionType.ConnorsRsi2 Then
+                    If qlRsi2 IsNot Nothing AndAlso qlSma5 IsNot Nothing AndAlso qlSma200 IsNot Nothing Then
+                        Dim rsi2Val = qlRsi2(i)
+                        Dim sma200Val = qlSma200(i)
+                        If Not (Single.IsNaN(rsi2Val) OrElse Single.IsNaN(sma200Val)) Then
+                            Dim crSide As String = Nothing
+                            If rsi2Val < 10.0F AndAlso bar.Close > CDec(sma200Val) Then
+                                crSide = "Buy"
+                            ElseIf rsi2Val > 90.0F AndAlso bar.Close < CDec(sma200Val) Then
+                                crSide = "Sell"
+                            End If
+                            If crSide IsNot Nothing Then
+                                positionGroupCounter += 1
+                                openLegs.Add(New BacktestTrade With {
+                                    .PositionGroupId = positionGroupCounter,
+                                    .EntryTime = bar.Timestamp,
+                                    .EntryPrice = bar.Close,
+                                    .Side = crSide,
+                                    .Quantity = config.Quantity,
+                                    .SignalConfidence = 1.0F
+                                })
+                            End If
+                        End If
+                    End If
+                    Continue For
+                End If
+
+                ' ── SuperTrend signal ──────────────────────────────────────────────
+                ' Long on direction flip from −1 to +1; Short on flip from +1 to −1.
+                ' SL = SuperTrend line level at entry; TP = 2× ATR(10) from entry.
+                If config.StrategyCondition = StrategyConditionType.SuperTrend Then
+                    If qlStLine IsNot Nothing AndAlso qlStDir IsNot Nothing Then
+                        Dim stDirNow = qlStDir(i)
+                        Dim stLineNow = qlStLine(i)
+                        If Not (Single.IsNaN(stDirNow) OrElse Single.IsNaN(stLineNow)) Then
+                            ' Entry on direction flip (open legs = 0 only)
+                            If openLegs.Count = 0 AndAlso qlStPrevDir <> 0.0F Then
+                                Dim stSide As String = Nothing
+                                If stDirNow = 1.0F AndAlso qlStPrevDir = -1.0F Then
+                                    stSide = "Buy"
+                                ElseIf stDirNow = -1.0F AndAlso qlStPrevDir = 1.0F Then
+                                    stSide = "Sell"
+                                End If
+                                If stSide IsNot Nothing Then
+                                    ' Use pre-calculated ATR(10) for TP sizing
+                                    Dim stAtrVal = If(qlStAtr10 IsNot Nothing AndAlso
+                                                      i < qlStAtr10.Length AndAlso
+                                                      Not Single.IsNaN(qlStAtr10(i)),
+                                                      CDec(qlStAtr10(i)), 0D)
+                                    positionGroupCounter += 1
+                                    openLegs.Add(New BacktestTrade With {
+                                        .PositionGroupId = positionGroupCounter,
+                                        .EntryTime = bar.Timestamp,
+                                        .EntryPrice = bar.Close,
+                                        .Side = stSide,
+                                        .Quantity = config.Quantity,
+                                        .SignalConfidence = 1.0F
+                                    })
+                                    qlStIsLong = (stSide = "Buy")
+                                    ' SL = SuperTrend line; TP = 2× ATR reward
+                                    If qlStIsLong Then
+                                        qlStOpenSlPrice = CDec(stLineNow)
+                                        qlStOpenTpPrice = If(stAtrVal > 0D,
+                                                             bar.Close + stAtrVal * 2D,
+                                                             bar.Close * 1.02D)
+                                    Else
+                                        qlStOpenSlPrice = CDec(stLineNow)
+                                        qlStOpenTpPrice = If(stAtrVal > 0D,
+                                                             bar.Close - stAtrVal * 2D,
+                                                             bar.Close * 0.98D)
+                                    End If
+                                End If
+                            End If
+                            qlStPrevDir = stDirNow
+                        End If
+                    End If
+                    Continue For
+                End If
+
+                ' ── DonchianBreakout signal ────────────────────────────────────────
+                ' Long on close > 20-bar upper channel; Short on close < 20-bar lower channel.
+                ' Exit when close crosses the 10-bar middle channel in adverse direction.
+                If openLegs.Count = 0 AndAlso
+                   config.StrategyCondition = StrategyConditionType.DonchianBreakout Then
+                    If qlDonUpper20 IsNot Nothing AndAlso qlDonLower20 IsNot Nothing AndAlso qlDonMid10 IsNot Nothing Then
+                        Dim donUpperVal = qlDonUpper20(i)
+                        Dim donLowerVal = qlDonLower20(i)
+                        Dim donMidVal = qlDonMid10(i)
+                        Dim prevDonUpperVal = If(i > 0, qlDonUpper20(i - 1), Single.NaN)
+                        Dim prevDonLowerVal = If(i > 0, qlDonLower20(i - 1), Single.NaN)
+                        If Not (Single.IsNaN(donUpperVal) OrElse Single.IsNaN(donLowerVal) OrElse
+                                Single.IsNaN(donMidVal) OrElse Single.IsNaN(prevDonUpperVal) OrElse
+                                Single.IsNaN(prevDonLowerVal)) Then
+                            Dim donSide As String = Nothing
+                            ' Break above prior bar's upper = new breakout long
+                            If bar.Close > CDec(prevDonUpperVal) Then
+                                donSide = "Buy"
+                            ' Break below prior bar's lower = new breakout short
+                            ElseIf bar.Close < CDec(prevDonLowerVal) Then
+                                donSide = "Sell"
+                            End If
+                            If donSide IsNot Nothing Then
+                                positionGroupCounter += 1
+                                openLegs.Add(New BacktestTrade With {
+                                    .PositionGroupId = positionGroupCounter,
+                                    .EntryTime = bar.Timestamp,
+                                    .EntryPrice = bar.Close,
+                                    .Side = donSide,
+                                    .Quantity = config.Quantity,
+                                    .SignalConfidence = 1.0F
+                                })
+                                qlDonIsLong = (donSide = "Buy")
+                                ' Exit when close crosses the 10-bar mid-channel (adverse direction)
+                                qlDonOpenMidExit = CDec(donMidVal)
+                            End If
+                        End If
+                    End If
+                    Continue For
+                End If
+
+                ' ── BbRsiMeanReversion signal ──────────────────────────────────────
+                ' Long when close < lower BB(20,2) AND RSI(14) < 30 (dual oversold).
+                ' Short when close > upper BB(20,2) AND RSI(14) > 70 (dual overbought).
+                ' Exit at middle BB (SMA20) or RSI(14) crosses 50.
+                If openLegs.Count = 0 AndAlso
+                   config.StrategyCondition = StrategyConditionType.BbRsiMeanReversion Then
+                    If qlBbUpper IsNot Nothing AndAlso qlBbLower IsNot Nothing AndAlso qlBbMiddle IsNot Nothing Then
+                        Dim bbUpperVal = qlBbUpper(i)
+                        Dim bbLowerVal = qlBbLower(i)
+                        Dim bbMidVal = qlBbMiddle(i)
+                        Dim rsiMrVal = rsi14Series(i)
+                        If Not (Single.IsNaN(bbUpperVal) OrElse Single.IsNaN(bbLowerVal) OrElse
+                                Single.IsNaN(bbMidVal) OrElse Single.IsNaN(rsiMrVal)) Then
+                            Dim mrSide As String = Nothing
+                            If bar.Close < CDec(bbLowerVal) AndAlso rsiMrVal < 30.0F Then
+                                mrSide = "Buy"
+                            ElseIf bar.Close > CDec(bbUpperVal) AndAlso rsiMrVal > 70.0F Then
+                                mrSide = "Sell"
+                            End If
+                            If mrSide IsNot Nothing Then
+                                positionGroupCounter += 1
+                                openLegs.Add(New BacktestTrade With {
+                                    .PositionGroupId = positionGroupCounter,
+                                    .EntryTime = bar.Timestamp,
+                                    .EntryPrice = bar.Close,
+                                    .Side = mrSide,
+                                    .Quantity = config.Quantity,
+                                    .SignalConfidence = 1.0F
+                                })
+                                qlBbIsLong = (mrSide = "Buy")
+                                ' Exit when price returns to middle BB (SMA20)
+                                qlBbOpenMidExit = CDec(bbMidVal)
+                            End If
+                        End If
+                    End If
+                    Continue For
+                End If
+
                 ' ── EMA/RSI weighted signal — same algorithm as StrategyExecutionEngine ──
                 ' Score is computed on every bar (open or flat): used for neutral-confidence
                 ' exit when a position is open, and for entry evaluation when flat.
                 ' Guarded to avoid running for TripleEmaCascade or MultiConfluence bars.
                 If config.StrategyCondition <> StrategyConditionType.TripleEmaCascade AndAlso
-                   config.StrategyCondition <> StrategyConditionType.MultiConfluence Then
+                   config.StrategyCondition <> StrategyConditionType.MultiConfluence AndAlso
+                   config.StrategyCondition <> StrategyConditionType.ConnorsRsi2 AndAlso
+                   config.StrategyCondition <> StrategyConditionType.SuperTrend AndAlso
+                   config.StrategyCondition <> StrategyConditionType.DonchianBreakout AndAlso
+                   config.StrategyCondition <> StrategyConditionType.BbRsiMeanReversion Then
                     Dim ema21Now = ema21Series(i)
                     Dim ema21Prev = ema21Series(i - 1)
                     Dim ema50Now = ema50Series(i)

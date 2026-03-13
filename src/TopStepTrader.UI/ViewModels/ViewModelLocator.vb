@@ -104,6 +104,12 @@ Namespace TopStepTrader.UI.ViewModels
             End Get
         End Property
 
+        Public ReadOnly Property QuantLabView As Views.QuantLabView
+            Get
+                Return Resolve(Of Views.QuantLabView)("QuantLab")
+            End Get
+        End Property
+
         Public Sub Dispose() Implements IDisposable.Dispose
             If Not _disposed Then
                 For Each scope In _scopes.Values

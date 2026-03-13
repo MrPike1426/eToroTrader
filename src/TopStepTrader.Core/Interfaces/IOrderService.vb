@@ -51,11 +51,15 @@ Namespace TopStepTrader.Core.Interfaces
         ''' Updates the SL and/or TP of an open position on the broker.
         ''' Used by the stepped trailing bracket to push free-ride levels to eToro
         ''' so positions are protected even if the engine is stopped.
+        ''' Set enableTsl=True to re-enable eToro's native Trailing Stop Loss from the
+        ''' new SL level — this is the documented path and avoids minimum-distance
+        ''' rejections from the undocumented PUT /positions endpoint.
         ''' Returns True on success.
         ''' </summary>
         Function EditPositionSlTpAsync(positionId As Long,
                                        slRate As Decimal?,
                                        tpRate As Decimal?,
+                                       Optional enableTsl As Boolean = False,
                                        Optional cancel As CancellationToken = Nothing) As Task(Of Boolean)
     End Interface
 

@@ -12,8 +12,8 @@
     -->
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>    <!-- settings panels + asset boxes + log -->
-            <RowDefinition Height="Auto"/> <!-- control bar -->
+            <RowDefinition Height="Auto"/>  <!-- settings panels -->
+            <RowDefinition Height="*"/>     <!-- log fills remaining space -->
         </Grid.RowDefinitions>
 
         <!-- ══════════════════════════════════════════════════════════
@@ -30,13 +30,17 @@
                         CornerRadius="6" Padding="20,14" Margin="0,12,0,0">
                     <StackPanel>
 
-                        <!-- Row 1: Account ComboBox | Monitoring label -->
+                        <!-- Row 1: Account ComboBox | Monitoring label | Start / Stop -->
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>  <!-- "Account:" label -->
                                 <ColumnDefinition Width="180"/>   <!-- Account ComboBox -->
                                 <ColumnDefinition Width="16"/>    <!-- gap -->
                                 <ColumnDefinition Width="*"/>     <!-- Monitoring label -->
+                                <ColumnDefinition Width="16"/>    <!-- gap -->
+                                <ColumnDefinition Width="Auto"/>  <!-- Start button -->
+                                <ColumnDefinition Width="10"/>    <!-- gap -->
+                                <ColumnDefinition Width="Auto"/>  <!-- Stop button -->
                             </Grid.ColumnDefinitions>
 
                             <TextBlock Grid.Column="0"
@@ -69,60 +73,35 @@
                                        VerticalAlignment="Center"
                                        TextTrimming="CharacterEllipsis"
                                        ToolTip="Hydra monitors all 5 assets simultaneously, 24/7"/>
+
+                            <Button Grid.Column="5"
+                                    Content="▶  Start Monitoring"
+                                    Command="{Binding StartCommand}"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    Width="160"
+                                    IsEnabled="{Binding IsNotRunning}"
+                                    ToolTip="Start all 5 asset monitoring sessions concurrently"/>
+
+                            <Button Grid.Column="7"
+                                    Content="■  Stop All"
+                                    Command="{Binding StopCommand}"
+                                    Style="{StaticResource DangerButtonStyle}"
+                                    Width="80"
+                                    ToolTip="Stop all 5 running asset sessions"/>
                         </Grid>
 
-                        <Border Height="8"/>
-
-                        <!-- 5 inline asset icon labels -->
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-
-                            <Border Background="{StaticResource CardBrush}"
-                                    CornerRadius="4" Padding="9,4" Margin="0,0,4,0">
-                                <TextBlock FontWeight="SemiBold" FontSize="12">
-                                    <Run Text="🛢️"/><Run Text="  OIL"/>
-                                </TextBlock>
-                            </Border>
-
-                            <TextBlock Text="|" VerticalAlignment="Center" Margin="2,0"
-                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"/>
-
-                            <Border Background="{StaticResource CardBrush}"
-                                    CornerRadius="4" Padding="9,4" Margin="4,0,4,0">
-                                <TextBlock FontWeight="SemiBold" FontSize="12">
-                                    <Run Text="🥇"/><Run Text="  GOLD"/>
-                                </TextBlock>
-                            </Border>
-
-                            <TextBlock Text="|" VerticalAlignment="Center" Margin="2,0"
-                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"/>
-
-                            <Border Background="{StaticResource CardBrush}"
-                                    CornerRadius="4" Padding="9,4" Margin="4,0,4,0">
-                                <TextBlock FontWeight="SemiBold" FontSize="12">
-                                    <Run Text="📈"/><Run Text="  NASDAQ100"/>
-                                </TextBlock>
-                            </Border>
-
-                            <TextBlock Text="|" VerticalAlignment="Center" Margin="2,0"
-                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"/>
-
-                            <Border Background="{StaticResource CardBrush}"
-                                    CornerRadius="4" Padding="9,4" Margin="4,0,4,0">
-                                <TextBlock FontWeight="SemiBold" FontSize="12">
-                                    <Run Text="🏦"/><Run Text="  SPX500"/>
-                                </TextBlock>
-                            </Border>
-
-                            <TextBlock Text="|" VerticalAlignment="Center" Margin="2,0"
-                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"/>
-
-                            <Border Background="{StaticResource CardBrush}"
-                                    CornerRadius="4" Padding="9,4" Margin="4,0,0,0">
-                                <TextBlock FontWeight="SemiBold" FontSize="12">
-                                    <Run Text="🇬🇧"/><Run Text="  UK100"/>
-                                </TextBlock>
-                            </Border>
-
+                        <!-- Status: running state + last updated, shown under the buttons -->
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,4,0,4">
+                            <TextBlock Text="{Binding StatusText}"
+                                       Foreground="{StaticResource AccentBrush}"
+                                       FontWeight="SemiBold" FontSize="12"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding LastUpdatedDisplay}"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <!-- Row 2: Amount / Leverage | TP / SL | Confidence -->
@@ -150,16 +129,16 @@
                             </StackPanel>
 
                             <TextBlock Grid.Column="3"
-                                       Text="TP% / SL%:" VerticalAlignment="Center"
+                                       Text="TP $ / SL $:" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextSecondaryBrush}"
                                        Margin="0,0,8,0"/>
                             <StackPanel Grid.Column="4" Orientation="Horizontal">
-                                <TextBox Text="{Binding TakeProfitPct, UpdateSourceTrigger=LostFocus}"
-                                         Width="44" ToolTip="Take-profit % of entry price (0 = none)"/>
+                                <TextBox Text="{Binding InitialTpAmount, UpdateSourceTrigger=LostFocus}"
+                                         Width="44" ToolTip="Initial take-profit in dollars (e.g. 20)"/>
                                 <TextBlock Text="/" VerticalAlignment="Center" Margin="5,0,5,0"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
-                                <TextBox Text="{Binding StopLossPct, UpdateSourceTrigger=LostFocus}"
-                                         Width="44" ToolTip="Stop-loss % of entry price (0 = none)"/>
+                                <TextBox Text="{Binding InitialSlAmount, UpdateSourceTrigger=LostFocus}"
+                                         Width="44" ToolTip="Initial stop-loss in dollars (e.g. 10)"/>
                             </StackPanel>
 
                             <TextBlock Grid.Column="6"
@@ -259,18 +238,21 @@
                                 </StackPanel>
                             </Button>
 
-                            <!-- 4. In Dev -->
-                            <Button IsEnabled="False"
+                            <!-- 4. BB Squeeze Scalper -->
+                            <Button Command="{Binding SelectBbSqueezeScalperCommand}"
                                     Style="{StaticResource StrategyCardStyle}"
                                     Margin="0"
-                                    ToolTip="Coming soon">
+                                    ToolTip="Dual-mode BB scalper — Mode A: Squeeze Breakout (BBW &lt; SMA(BBW,20) for ≥3 bars then close breaks outer band, EMA5 slope + RSI7 confirm) · Mode B: Band Bounce (%B &lt; 0 or &gt; 1, RSI7 extreme, rejection wick ≥60%). TP=0.4% · SL=0.2% · 1-min bars · 5× leverage · 15s polling.">
                                 <StackPanel>
-                                    <TextBlock Text="⚙  Strategy 4"
+                                    <TextBlock Text="📊  BB Squeeze Scalper"
                                                FontWeight="SemiBold" FontSize="12"
-                                               Foreground="{StaticResource TextSecondaryBrush}"/>
-                                    <TextBlock Text="In Development"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="BB(12) · %B · RSI7 · EMA5 · ATR10"
                                                FontSize="10" Margin="0,2,0,0"
                                                Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <TextBlock Text="1-min bars · 0.4%/0.2% scalp · 5× lvg"
+                                               FontSize="9" Margin="0,1,0,0"
+                                               Foreground="{StaticResource AccentBrush}"/>
                                 </StackPanel>
                             </Button>
 
@@ -309,16 +291,16 @@
                                                     TextElement.FontSize="10"
                                                     TextElement.Foreground="{Binding CardForeground}">
 
-                                            <!-- Large icon -->
-                                            <TextBlock Text="{Binding Icon, Mode=OneWay}"
-                                                       FontSize="26"
-                                                       HorizontalAlignment="Center"/>
-
-                                            <!-- Symbol name -->
-                                            <TextBlock Text="{Binding Symbol, Mode=OneWay}"
-                                                       FontWeight="SemiBold"
-                                                       HorizontalAlignment="Center"
-                                                       Margin="0,5,0,0"/>
+                                            <!-- Icon + Symbol name inline, both FontSize=26 -->
+                                            <StackPanel Orientation="Horizontal"
+                                                        HorizontalAlignment="Center">
+                                                <TextBlock Text="{Binding Icon, Mode=OneWay}"
+                                                           FontSize="26"/>
+                                                <TextBlock Text="{Binding Symbol, Mode=OneWay}"
+                                                           FontSize="26"
+                                                           FontWeight="SemiBold"
+                                                           Margin="6,0,0,0"/>
+                                            </StackPanel>
 
                                             <!-- Divider -->
                                             <Border Height="1"
@@ -351,6 +333,16 @@
                                                        Margin="0,5,0,0"
                                                        ToolTip="Live position status: entry price, size, and unrealised P&amp;L. Updates every 30 s. Trail bracket arms at ≥2% profit."/>
 
+                                            <!-- Turtle bracket confirmation -->
+                                            <TextBlock Text="{Binding TurtleStatusLine}"
+                                                       FontFamily="Consolas"
+                                                       FontSize="9"
+                                                       HorizontalAlignment="Center"
+                                                       TextAlignment="Center"
+                                                       Foreground="#FFFF9500"
+                                                       Margin="0,3,0,0"
+                                                       Visibility="{Binding HasTurtleStatus, Converter={StaticResource BoolToVisibilityConverter}}"/>
+
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>
@@ -360,97 +352,305 @@
                     </StackPanel>
                 </Border>
 
-                <!-- ── Monitoring Log ──────────────────────────────────── -->
-                <Border Background="{StaticResource SidebarBrush}"
-                        CornerRadius="6" Margin="0,8,0,8" Height="180">
-                    <ListBox x:Name="LogList"
-                             ItemsSource="{Binding LogEntries}"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             Margin="24,6,24,6"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             VirtualizingPanel.ScrollUnit="Pixel"
-                             SelectionMode="Single">
-                        <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
-                                <Setter Property="Padding"                    Value="0,1"/>
-                                <Setter Property="Foreground"                 Value="{StaticResource AccentBrush}"/>
-                                <Setter Property="Background"                 Value="Transparent"/>
-                                <Setter Property="BorderThickness"            Value="0"/>
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                <Setter Property="FocusVisualStyle"           Value="{x:Null}"/>
-                                <Style.Triggers>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-                                    </Trigger>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ListBox.ItemContainerStyle>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}"
-                                           TextWrapping="Wrap"
-                                           Foreground="{StaticResource AccentBrush}"
-                                           FontFamily="Consolas" FontSize="10"/>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
 
-            </StackPanel>
-        </ScrollViewer>
+                        <!-- ── Indicator Grid — one live row per asset ─────────────────────── -->
+                        <Border Grid.Row="1"
+                                Background="{StaticResource SidebarBrush}"
+                                CornerRadius="6" Margin="24,4,24,8" Padding="8,6">
+                            <Grid>
 
-        <!-- ══════════════════════════════════════════════════════════
-             BOTTOM: Control bar
-             ══════════════════════════════════════════════════════════ -->
-        <Border Grid.Row="1"
-                Background="{StaticResource SurfaceBrush}"
-                Padding="24,8"
-                BorderThickness="0,1,0,0"
-                BorderBrush="{StaticResource CardBrush}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>  <!-- Start -->
-                    <ColumnDefinition Width="Auto"/>  <!-- Stop -->
-                    <ColumnDefinition Width="*"/>     <!-- Status (right fill) -->
-                </Grid.ColumnDefinitions>
+                                <!-- ══ EMA/RSI Combined Grid ══════════════════════════════════════════ -->
+                                <DataGrid ItemsSource="{Binding Assets}"
+                                          Visibility="{Binding IsEmaRsiActive, Converter={StaticResource BoolToVisibilityConverter}}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          CanUserSortColumns="False"
+                                          CanUserResizeRows="False"
+                                          RowHeight="64"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          FontFamily="Consolas" FontSize="12"
+                                          Foreground="{StaticResource TextPrimaryBrush}"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
+                                    <DataGrid.ColumnHeaderStyle>
+                                        <Style TargetType="DataGridColumnHeader">
+                                            <Setter Property="Background"      Value="#FF1A2845"/>
+                                            <Setter Property="Foreground"      Value="{StaticResource TextSecondaryBrush}"/>
+                                            <Setter Property="FontFamily"      Value="Segoe UI"/>
+                                            <Setter Property="FontSize"        Value="9"/>
+                                            <Setter Property="FontWeight"      Value="SemiBold"/>
+                                            <Setter Property="Padding"         Value="6,5"/>
+                                            <Setter Property="BorderBrush"     Value="#FF2E3F6E"/>
+                                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                                            <Setter Property="ContentTemplate">
+                                                <Setter.Value>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding}"
+                                                                   TextWrapping="Wrap"
+                                                                   FontFamily="Segoe UI"
+                                                                   FontSize="9"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </DataTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </DataGrid.ColumnHeaderStyle>
+                                    <DataGrid.CellStyle>
+                                        <Style TargetType="DataGridCell">
+                                            <Setter Property="Background"               Value="Transparent"/>
+                                            <Setter Property="BorderThickness"          Value="0"/>
+                                            <Setter Property="Padding"                  Value="0"/>
+                                            <Setter Property="Foreground"               Value="{StaticResource TextPrimaryBrush}"/>
+                                            <Setter Property="VerticalContentAlignment" Value="Top"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter Property="Background" Value="#1A4A9FFF"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGrid.CellStyle>
+                                    <DataGrid.Columns>
+                                        <!-- Asset -->
+                                        <DataGridTextColumn Header="Asset"  Binding="{Binding Symbol}"      Width="60"/>
+                                        <!-- Time -->
+                                        <DataGridTextColumn Header="Time"   Binding="{Binding LastUpdated}" Width="72"/>
+                                        <!-- Close -->
+                                        <DataGridTextColumn Header="Close"  Binding="{Binding GridClose}"   Width="76"/>
+                                        <!-- EMA21 / EMA50 (stacked) -->
+                                        <DataGridTemplateColumn Header="EMA21&#x0A;EMA50" Width="82">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="6,4" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding GridEma21}" FontFamily="Consolas" FontSize="12"/>
+                                                        <TextBlock Text="{Binding GridEma50}" FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <!-- RSI14 -->
+                                        <DataGridTextColumn Header="RSI14"  Binding="{Binding GridRsi14}"   Width="55"/>
+                                        <!-- ADX -->
+                                        <DataGridTextColumn Header="ADX"    Binding="{Binding GridAdx}"     Width="50"/>
+                                        <!-- DI+ / DI- (stacked, colour coded) -->
+                                        <DataGridTemplateColumn Header="DI+&#x0A;DI-" Width="50">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="6,4" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding GridDiPlus}"  FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource BuyBrush}"/>
+                                                        <TextBlock Text="{Binding GridDiMinus}" FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource SellBrush}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <!-- Bull% / Bear% (stacked) -->
+                                        <DataGridTemplateColumn Header="Bull%&#x0A;Bear%" Width="60">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="6,4" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding UpPct,   StringFormat='{}{0}%'}" FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource BuyBrush}"/>
+                                                        <TextBlock Text="{Binding DownPct, StringFormat='{}{0}%'}" FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource SellBrush}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <!-- Conf -->
+                                        <DataGridTextColumn Header="Conf"   Binding="{Binding GridConf}"    Width="90"/>
+                                        <!-- Explain -->
+                                        <DataGridTemplateColumn Header="Explain" Width="*" MinWidth="260">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding GridExplain}"
+                                                               FontFamily="Consolas" FontSize="10"
+                                                               TextWrapping="Wrap"
+                                                               Margin="6,4"
+                                                               VerticalAlignment="Top"
+                                                               ToolTip="{Binding GridExplain}"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
 
-                <Button Grid.Column="0"
-                        Content="▶  Start Monitoring"
-                        Command="{Binding StartCommand}"
-                        Style="{StaticResource PrimaryButtonStyle}"
-                        Width="160"
-                        IsEnabled="{Binding IsNotRunning}"
-                        ToolTip="Start all 5 asset monitoring sessions concurrently"/>
+                                <!-- ══ Multi-Confluence Grid ═══════════════════════════════════════════ -->
+                                <DataGrid ItemsSource="{Binding Assets}"
+                                          Visibility="{Binding IsMultiConfluenceActive, Converter={StaticResource BoolToVisibilityConverter}}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          CanUserSortColumns="False"
+                                          CanUserResizeRows="False"
+                                          RowHeight="64"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          FontFamily="Consolas" FontSize="12"
+                                          Foreground="{StaticResource TextPrimaryBrush}"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
+                                    <DataGrid.ColumnHeaderStyle>
+                                        <Style TargetType="DataGridColumnHeader">
+                                            <Setter Property="Background"      Value="#FF1A2845"/>
+                                            <Setter Property="Foreground"      Value="{StaticResource TextSecondaryBrush}"/>
+                                            <Setter Property="FontFamily"      Value="Segoe UI"/>
+                                            <Setter Property="FontSize"        Value="9"/>
+                                            <Setter Property="FontWeight"      Value="SemiBold"/>
+                                            <Setter Property="Padding"         Value="6,5"/>
+                                            <Setter Property="BorderBrush"     Value="#FF2E3F6E"/>
+                                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                                            <Setter Property="ContentTemplate">
+                                                <Setter.Value>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding}"
+                                                                   TextWrapping="Wrap"
+                                                                   FontFamily="Segoe UI"
+                                                                   FontSize="9"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </DataTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </DataGrid.ColumnHeaderStyle>
+                                    <DataGrid.CellStyle>
+                                        <Style TargetType="DataGridCell">
+                                            <Setter Property="Background"               Value="Transparent"/>
+                                            <Setter Property="BorderThickness"          Value="0"/>
+                                            <Setter Property="Padding"                  Value="0"/>
+                                            <Setter Property="Foreground"               Value="{StaticResource TextPrimaryBrush}"/>
+                                            <Setter Property="VerticalContentAlignment" Value="Top"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter Property="Background" Value="#1A4A9FFF"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGrid.CellStyle>
+                                    <DataGrid.Columns>
+                                        <!-- Asset -->
+                                        <DataGridTextColumn Header="Asset"  Binding="{Binding Symbol}"      Width="60"/>
+                                        <!-- Time -->
+                                        <DataGridTextColumn Header="Time"   Binding="{Binding LastUpdated}" Width="72"/>
+                                        <!-- Close -->
+                                        <DataGridTextColumn Header="Close"  Binding="{Binding GridClose}"   Width="76"/>
+                                        <!-- Cloud1 / Cloud2 (stacked) -->
+                                        <DataGridTemplateColumn Header="Cloud1&#x0A;Cloud 2" Width="80">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="6,4" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding GridCloud1}" FontFamily="Consolas" FontSize="12"/>
+                                                        <TextBlock Text="{Binding GridCloud2}" FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <!-- T: / K: (stacked) -->
+                                        <DataGridTemplateColumn Header="Tenkan:&#x0A;Kijun:" Width="80">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="6,4" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding GridTenkan}" FontFamily="Consolas" FontSize="12"/>
+                                                        <TextBlock Text="{Binding GridKijun}"  FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <!-- EMA21: / EMA50: (stacked) -->
+                                        <DataGridTemplateColumn Header="EMA21:&#x0A;EMA50:" Width="80">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="6,4" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding GridEma21}" FontFamily="Consolas" FontSize="12"/>
+                                                        <TextBlock Text="{Binding GridEma50}" FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <!-- ADX -->
+                                        <DataGridTextColumn Header="ADX:"  Binding="{Binding GridAdx}"   Width="50"/>
+                                        <!-- DI+ / DI- (stacked, colour coded) -->
+                                        <DataGridTemplateColumn Header="DI+&#x0A;DI-" Width="50">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="6,4" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding GridDiPlus}"  FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource BuyBrush}"/>
+                                                        <TextBlock Text="{Binding GridDiMinus}" FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource SellBrush}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <!-- MACD / MACD Prev (stacked) -->
+                                        <DataGridTemplateColumn Header="MACD&#x0A;MACD Prev" Width="82">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="6,4" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding GridMacd}"     FontFamily="Consolas" FontSize="12"/>
+                                                        <TextBlock Text="{Binding GridMacdPrev}" FontFamily="Consolas" FontSize="12"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <!-- Stoch RSI -->
+                                        <DataGridTextColumn Header="Stoch&#x0A;RSI"  Binding="{Binding GridStochRsi}"   Width="50"/>
+                                        <!-- Long x/7 -->
+                                        <DataGridTextColumn Header="Long&#x0A;x/7"   Binding="{Binding GridLongScore}"  Width="46"/>
+                                        <!-- Short x/7 -->
+                                        <DataGridTextColumn Header="Short&#x0A;x/7"  Binding="{Binding GridShortScore}" Width="46"/>
+                                        <!-- Conf -->
+                                        <DataGridTextColumn Header="Conf"             Binding="{Binding GridConf}"       Width="90"/>
+                                        <!-- Explain: 3-line natural-language summary of which conditions pass/fail -->
+                                        <DataGridTemplateColumn Header="Explain" Width="*" MinWidth="220">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding GridExplain}"
+                                                               FontFamily="Consolas" FontSize="10"
+                                                               TextWrapping="Wrap"
+                                                               Margin="6,4"
+                                                               VerticalAlignment="Top"
+                                                               ToolTip="{Binding GridExplain}"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
 
-                <Button Grid.Column="1"
-                        Content="■  Stop All"
-                        Command="{Binding StopCommand}"
-                        Style="{StaticResource DangerButtonStyle}"
-                        Margin="10,0,0,0" Width="80"
-                        ToolTip="Stop all 5 running asset sessions"/>
+                                <!-- ══ No-strategy placeholder ════════════════════════════════════════ -->
+                                <TextBlock Text="Select a strategy above to view the live indicator grid."
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           FontSize="13" FontFamily="Segoe UI"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Margin="0,20">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsEmaRsiActive}" Value="False">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsMultiConfluenceActive}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
 
-                <StackPanel Grid.Column="2"
-                            Orientation="Horizontal"
-                            HorizontalAlignment="Right"
-                            VerticalAlignment="Center"
-                            Margin="16,0,0,0">
-                    <TextBlock Text="{Binding StatusText}"
-                               Foreground="{StaticResource AccentBrush}"
-                               FontWeight="SemiBold" FontSize="12"
-                               VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding LastUpdatedDisplay}"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="11"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
-            </Grid>
-        </Border>
+                            </Grid>
+                        </Border>
 
-    </Grid>
-</UserControl>
+                    </Grid>
+                </UserControl>

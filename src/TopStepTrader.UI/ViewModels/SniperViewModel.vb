@@ -69,23 +69,23 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
-        Private _takeProfitTicks As String = "10"
-        Public Property TakeProfitTicks As String
+        Private _initialTpAmount As String = "20"
+        Public Property InitialTpAmount As String
             Get
-                Return _takeProfitTicks
+                Return _initialTpAmount
             End Get
             Set(value As String)
-                SetProperty(_takeProfitTicks, value)
+                SetProperty(_initialTpAmount, value)
             End Set
         End Property
 
-        Private _stopLossTicks As String = "5"
-        Public Property StopLossTicks As String
+        Private _initialSlAmount As String = "10"
+        Public Property InitialSlAmount As String
             Get
-                Return _stopLossTicks
+                Return _initialSlAmount
             End Get
             Set(value As String)
-                SetProperty(_stopLossTicks, value)
+                SetProperty(_initialSlAmount, value)
             End Set
         End Property
 
@@ -373,23 +373,23 @@ Namespace TopStepTrader.UI.ViewModels
             End Set
         End Property
 
-        Private _btTakeProfitTicks As String = "10"
-        Public Property BtTakeProfitTicks As String
+        Private _btInitialTpAmount As String = "20"
+        Public Property BtInitialTpAmount As String
             Get
-                Return _btTakeProfitTicks
+                Return _btInitialTpAmount
             End Get
             Set(value As String)
-                SetProperty(_btTakeProfitTicks, value)
+                SetProperty(_btInitialTpAmount, value)
             End Set
         End Property
 
-        Private _btStopLossTicks As String = "5"
-        Public Property BtStopLossTicks As String
+        Private _btInitialSlAmount As String = "10"
+        Public Property BtInitialSlAmount As String
             Get
-                Return _btStopLossTicks
+                Return _btInitialSlAmount
             End Get
             Set(value As String)
-                SetProperty(_btStopLossTicks, value)
+                SetProperty(_btInitialSlAmount, value)
             End Set
         End Property
 
@@ -578,11 +578,13 @@ Namespace TopStepTrader.UI.ViewModels
         Private Sub ExecuteStart()
             If String.IsNullOrEmpty(_contractId) OrElse _selectedAccount Is Nothing Then Return
 
-            Dim tp, sl, heat, targetSize, coreAdds, momSize, extSize As Integer
+            Dim heat, targetSize, coreAdds, momSize, extSize As Integer
             Dim scaleK, coreFrac As Double
+            Dim tpDollars As Decimal = 0D
+            Dim slDollars As Decimal = 0D
 
-            Integer.TryParse(_takeProfitTicks, tp)
-            Integer.TryParse(_stopLossTicks, sl)
+            Decimal.TryParse(_initialTpAmount, tpDollars)
+            Decimal.TryParse(_initialSlAmount, slDollars)
             Double.TryParse(_scaleInTriggerTicks, scaleK) ' 'k' factor (ATR multiplier)
             Integer.TryParse(_maxRiskHeatTicks, heat)
 
@@ -592,8 +594,14 @@ Namespace TopStepTrader.UI.ViewModels
             Integer.TryParse(_momentumTierSize, momSize)
             Integer.TryParse(_extensionTierSize, extSize)
 
-            If tp <= 0 Then tp = 10
-            If sl <= 0 Then sl = 5
+            If tpDollars <= 0D Then tpDollars = 20D
+            If slDollars <= 0D Then slDollars = 10D
+
+            ' Convert dollar TP/SL to ticks for ISniperExecutionEngine.Start()
+            Dim tickVal = GetTickValue(_contractId)
+            Dim tp As Integer = If(tickVal > 0D, CInt(Math.Round(tpDollars / tickVal)), 20)
+            Dim sl As Integer = If(tickVal > 0D, CInt(Math.Round(slDollars / tickVal)), 10)
+
             If scaleK <= 0 Then scaleK = 0.4
             If heat <= 0 Then heat = 30
             If targetSize <= 0 Then targetSize = 10
@@ -626,7 +634,7 @@ Namespace TopStepTrader.UI.ViewModels
             LogEntries.Clear()
 
             LogEntries.Add($"⚡ Starting Sniper: MaxSize={targetSize}, Core={coreFrac:P0} in {coreAdds} entries.")
-            LogEntries.Add($"   Momentum Add={momSize}, Extension Add={extSize} (allowed={_extensionAllowed})")
+            LogEntries.Add($"   TP=${tpDollars:F0} SL=${slDollars:F0} → {tp}/{sl} ticks | Momentum Add={momSize}, Extension Add={extSize} (allowed={_extensionAllowed})")
 
             IsRunning = True
 
@@ -708,11 +716,11 @@ Namespace TopStepTrader.UI.ViewModels
                 Return
             End If
 
-            Dim tp, sl As Integer
-            Integer.TryParse(_btTakeProfitTicks, tp)
-            Integer.TryParse(_btStopLossTicks, sl)
-            If tp <= 0 Then tp = 10
-            If sl <= 0 Then sl = 5
+            Dim tpAmount, slAmount As Decimal
+            Decimal.TryParse(_btInitialTpAmount, tpAmount)
+            Decimal.TryParse(_btInitialSlAmount, slAmount)
+            If tpAmount <= 0D Then tpAmount = 20D
+            If slAmount <= 0D Then slAmount = 10D
 
             Dim config As New BacktestConfiguration With {
                 .RunName = $"Sniper {DateTime.Now:yyyyMMdd-HHmm} — {_backtestContractId}",
@@ -721,8 +729,8 @@ Namespace TopStepTrader.UI.ViewModels
                 .StartDate = _backtestStartDate,
                 .EndDate = _backtestEndDate,
                 .InitialCapital = 50000D,
-                .StopLossTicks = sl,
-                .TakeProfitTicks = tp,
+                .InitialSlAmount = slAmount,
+                .InitialTpAmount = tpAmount,
                 .MinSignalConfidence = 0.8F,
                 .Quantity = 1,
                 .TickSize = GetTickSize(_backtestContractId),

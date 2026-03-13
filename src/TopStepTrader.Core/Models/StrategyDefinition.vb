@@ -31,34 +31,30 @@ Namespace TopStepTrader.Core.Models
         Public Property GoLongWhenBelowBands As Boolean = True
         Public Property GoShortWhenAboveBands As Boolean = True
 
-        ' ── Exit strategy (bracket orders) ────────────────────────────────
-        ''' <summary>Take-profit distance in ticks (0 = no TP). Non-eToro execution paths.</summary>
-        Public Property TakeProfitTicks As Integer = 40
-        ''' <summary>Stop-loss distance in ticks (0 = no SL). Non-eToro execution paths.</summary>
-        Public Property StopLossTicks As Integer = 20
+        ' ── Exit strategy — Turtle Bracket (all execution paths) ─────────────────
         ''' <summary>
-        ''' Minimum price increment for the selected contract (e.g. 0.25 for ES, 5.0 for MBT).
-        ''' Set by the ViewModel from ContractDto.TickSize before starting the engine.
-        ''' Used to convert tick counts into price offsets for bracket orders.
+        ''' Initial stop-loss in dollars (e.g. 10 = $10 hard stop for Bracket 0).
+        ''' Turtle bracket SL only ever advances in the favourable direction; never retreats.
+        ''' Engine converts to an absolute price: Entry ± (InitialSlAmount / DollarPerPoint).
+        ''' </summary>
+        Public Property InitialSlAmount As Decimal = 10D
+
+        ''' <summary>
+        ''' Initial take-profit target in dollars (e.g. 20 = $20 triggers first bracket advance).
+        ''' Once hit, SL steps to the TP level and a new TP is set at TP + 0.5×N (ATR in $).
+        ''' Engine converts to an absolute price: Entry ± (InitialTpAmount / DollarPerPoint).
+        ''' </summary>
+        Public Property InitialTpAmount As Decimal = 20D
+
+        ''' <summary>
+        ''' Minimum price increment for the selected contract (e.g. 0.25 for MES/MNQ).
+        ''' Used by TopStep engines for tick-count conversion via TurtleBracketManager.DollarsToTicks.
         ''' </summary>
         Public Property TickSize As Decimal = 1D
+
         ''' <summary>Dollar value of one tick move (e.g. MES = $1.25, MGC = $1.00). Used for P&amp;L display.</summary>
         Public Property TickValue As Decimal = 1D
 
-        ' ── Exit strategy — eToro percentage-based (AI Trading path) ────────────────
-        ''' <summary>
-        ''' Take-profit as a percentage of entry price (0 = no TP order placed).
-        ''' E.g. 1.5 means close position when price rises 1.5% above entry (Long)
-        ''' or falls 1.5% below entry (Short).
-        ''' Used by the eToro AI Trading path; computed into an absolute StopLossRate.
-        ''' </summary>
-        Public Property TakeProfitPct As Decimal = 0D
-        ''' <summary>
-        ''' Stop-loss as a percentage of entry price (0 = no SL order placed).
-        ''' E.g. 0.75 means protect position if price moves 0.75% against entry.
-        ''' Used by the eToro AI Trading path; computed into an absolute StopLossRate.
-        ''' </summary>
-        Public Property StopLossPct As Decimal = 0D
         ''' <summary>Leverage multiplier sent to eToro (default 1 = no leverage).
         ''' Affects both the effective position size and the minimum cash required:
         ''' minCash = MinNotionalUsd / Leverage.</summary>
@@ -118,10 +114,8 @@ Namespace TopStepTrader.Core.Models
                     directions = "Short only"
                 End If
 
-                Dim tp = If(TakeProfitPct > 0, $"TP:{TakeProfitPct:F2}%",
-                            If(TakeProfitTicks > 0, $"TP:{TakeProfitTicks}t", "No TP"))
-                Dim sl = If(StopLossPct > 0, $"SL:{StopLossPct:F2}%",
-                            If(StopLossTicks > 0, $"SL:{StopLossTicks}t", "No SL"))
+                Dim tp = If(InitialTpAmount > 0, $"TP:${InitialTpAmount:F0}", "No TP")
+                Dim sl = If(InitialSlAmount > 0, $"SL:${InitialSlAmount:F0}", "No SL")
 
                 Return $"{indicator} | {TimeframeMinutes}-min | {DurationHours}hrs | {directions} | {tp} {sl}"
             End Get

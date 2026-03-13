@@ -19,8 +19,18 @@ Namespace TopStepTrader.Core.Interfaces
         Public Property EndDate As Date
         Public Property InitialCapital As Decimal = 50000D
         Public Property MinSignalConfidence As Single = 0.65F
-        Public Property StopLossTicks As Integer = 20
-        Public Property TakeProfitTicks As Integer = 40
+
+        ''' <summary>
+        ''' Initial hard stop in dollars (e.g. 10 = $10 max loss on entry).
+        ''' Turtle bracket uses this as the first SL level; SL only advances thereafter.
+        ''' </summary>
+        Public Property InitialSlAmount As Decimal = 10D
+
+        ''' <summary>
+        ''' Initial take-profit target in dollars (e.g. 20 = $20 gain triggers first bracket advance).
+        ''' Subsequent bracket steps advance by 0.5 × N (ATR in dollar terms).
+        ''' </summary>
+        Public Property InitialTpAmount As Decimal = 20D
 
         ' ── Per-contract execution parameters ──────────────────────────────────
         ''' <summary>Number of contracts per trade entry.</summary>
@@ -59,10 +69,6 @@ Namespace TopStepTrader.Core.Interfaces
         Public Property MinAdxThreshold As Single = 0.0F
 
         ' ── EmaRsiWeightedScore / eToro by-amount fields ────────────────────────
-        ''' <summary>Take-profit as % of entry price (0 = use tick-based TP). Mirrors AiTrading path.</summary>
-        Public Property TakeProfitPct As Decimal = 4.0D
-        ''' <summary>Stop-loss as % of entry price (0 = use tick-based SL). Mirrors AiTrading path.</summary>
-        Public Property StopLossPct As Decimal = 1.5D
         ''' <summary>USD cash per initial entry (EmaRsiWeightedScore). Default $200.</summary>
         Public Property EntryAmount As Decimal = 200D
         ''' <summary>Leverage for the initial entry (EmaRsiWeightedScore). Default 5.</summary>

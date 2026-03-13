@@ -281,29 +281,29 @@ Namespace TopStepTrader.UI.ViewModels
             End Get
         End Property
 
-        ' ── Exit strategy ─────────────────────────────────────────────────────────
-        Private _takeProfitPct As Decimal = 4.0D
-        ''' <summary>Take-profit as % of entry price. 0 = no TP order. Default 4%.</summary>
-        Public Property TakeProfitPct As Decimal
+        ' ── Exit strategy (Turtle bracket dollar amounts) ─────────────────────────
+        Private _initialTpAmount As Decimal = 20D
+        ''' <summary>Initial take-profit in dollars. Turtle bracket first TP level. Default $20.</summary>
+        Public Property InitialTpAmount As Decimal
             Get
-                Return _takeProfitPct
+                Return _initialTpAmount
             End Get
             Set(value As Decimal)
-                If SetProperty(_takeProfitPct, Math.Max(0D, value)) Then
+                If SetProperty(_initialTpAmount, Math.Max(0D, value)) Then
                     NotifyPropertyChanged(NameOf(IsFormReady))
                     RelayCommand.RaiseCanExecuteChanged()
                 End If
             End Set
         End Property
 
-        Private _stopLossPct As Decimal = 1.5D
-        ''' <summary>Stop-loss as % of entry price. 0 = no SL order. Default 1.5%.</summary>
-        Public Property StopLossPct As Decimal
+        Private _initialSlAmount As Decimal = 10D
+        ''' <summary>Initial stop-loss in dollars. Turtle bracket first SL level. Default $10.</summary>
+        Public Property InitialSlAmount As Decimal
             Get
-                Return _stopLossPct
+                Return _initialSlAmount
             End Get
             Set(value As Decimal)
-                If SetProperty(_stopLossPct, Math.Max(0D, value)) Then
+                If SetProperty(_initialSlAmount, Math.Max(0D, value)) Then
                     NotifyPropertyChanged(NameOf(IsFormReady))
                     RelayCommand.RaiseCanExecuteChanged()
                 End If
@@ -588,6 +588,7 @@ Namespace TopStepTrader.UI.ViewModels
         Public ReadOnly Property SelectEmaRsiCombinedCommand As RelayCommand
         Public ReadOnly Property SelectMultiConfluenceEngineCommand As RelayCommand
         Public ReadOnly Property SelectLultDivergenceCommand As RelayCommand
+        Public ReadOnly Property SelectBbSqueezeScalperCommand As RelayCommand
 
         ' Preserved for future move to Backtest page
         Public ReadOnly Property ParseCommand As RelayCommand
@@ -634,6 +635,8 @@ Namespace TopStepTrader.UI.ViewModels
                                                                    Function(p) IsFormReady AndAlso IsNotRunning)
             SelectLultDivergenceCommand = New RelayCommand(Sub(p) ApplyLultDivergence(),
                                                             Function(p) IsFormReady AndAlso IsNotRunning)
+            SelectBbSqueezeScalperCommand = New RelayCommand(Sub(p) ApplyBbSqueezeScalper(),
+                                                              Function(p) IsFormReady AndAlso IsNotRunning)
 
             ' Preserved for future move to Backtest page
             ParseCommand = New RelayCommand(AddressOf ExecuteParse)
@@ -727,8 +730,8 @@ Namespace TopStepTrader.UI.ViewModels
                 .RawDescription = t.RawDescription,
                 .CapitalAtRisk = _capitalAtRisk,
                 .Quantity = _quantity,
-                .TakeProfitPct = _takeProfitPct,
-                .StopLossPct = _stopLossPct,
+                .InitialTpAmount = _initialTpAmount,
+                .InitialSlAmount = _initialSlAmount,
                 .Leverage = _leverage
             }
 
@@ -766,10 +769,10 @@ Namespace TopStepTrader.UI.ViewModels
                 "Timeframe: 5-minute bars. Entry: UP ≥ confidence% → Long, DOWN ≥ confidence% → Short."
 
             ' ── Apply strategy-recommended defaults ───────────────────────────────
-            ' 4% TP / 1.5% SL gives a 2.67:1 risk–reward ratio.
+            ' $20 TP / $10 SL gives a 2:1 risk-reward ratio in dollar terms.
             ' Set via property setters so UI TextBoxes update through normal data binding.
-            TakeProfitPct = 4.0D    ' 4% above entry — targets a meaningful intraday momentum move
-            StopLossPct = 1.5D     ' 1.5% below entry — tight enough to limit loss on failure
+            InitialTpAmount = 20D  ' $20 take-profit — Turtle bracket first TP level
+            InitialSlAmount = 10D  ' $10 stop-loss — Turtle bracket first SL level
             Leverage = 5           ' 5× leverage matches the scale-in default
             Quantity = 1           ' Kept for reference; by-amount uses CapitalAtRisk
 
@@ -787,8 +790,8 @@ Namespace TopStepTrader.UI.ViewModels
                 .RawDescription = Description,
                 .CapitalAtRisk = _capitalAtRisk,
                 .Quantity = _quantity,
-                .TakeProfitPct = _takeProfitPct,
-                .StopLossPct = _stopLossPct,
+                .InitialTpAmount = _initialTpAmount,
+                .InitialSlAmount = _initialSlAmount,
                 .Leverage = _leverage,
                 .ScaleInAmount = _scaleInAmount,
                 .ScaleInLeverage = _scaleInLeverage,
@@ -819,14 +822,14 @@ Namespace TopStepTrader.UI.ViewModels
                 "(up to 3 scale-ins after the initial, each $200 at 5× leverage). " &
                 "The moment the score drifts into the 40–60% neutral band, ALL open positions are closed immediately — " &
                 "the trend has lost conviction and the engine gets flat." & vbLf & vbLf &
-                "Defaults: 5-min bars · 4% take-profit · 1.5% stop-loss · 2.7:1 R:R · 5× leverage · $200 amount · 85% confidence threshold."
+                "Defaults: 5-min bars · $20 take-profit · $10 stop-loss · 2:1 R:R · 5× leverage · $200 amount · 85% confidence threshold."
             HasStrategyDescription = True
 
             LogEntries.Clear()
             LogLine("─────────────────────────────────────────────────────────────────────")
             LogLine("Configure account, contract and risk settings above, then click  ▶ Start Monitoring.")
             LogLine("")
-            LogLine($"• Defaults: 5-min bars · TP={_takeProfitPct:F1}% · SL={_stopLossPct:F1}% · Amt=${_capitalAtRisk:F0} · Lvg={_leverage}×  · Confidence={_minConfidencePct}%")
+            LogLine($"• Defaults: 5-min bars · TP=${_initialTpAmount:F0} · SL=${_initialSlAmount:F0} · Amt=${_capitalAtRisk:F0} · Lvg={_leverage}×  · Confidence={_minConfidencePct}%")
             LogLine("• Neutral confidence (40–60%) → ALL positions closed immediately (flatten)")
             LogLine("• Scale-in: 3 more trades at $200/5× after 3 consecutive extreme new bars (cap: 4 total)")
             LogLine("• Entry fires when combined EMA/RSI score ≥ 85% bull (Long) or ≥ 85% bear (Short)")
@@ -849,9 +852,9 @@ Namespace TopStepTrader.UI.ViewModels
                 "Lagging Span confirmation, ADX > 25 with DI alignment, MACD histogram direction, StochRSI gate." & vbLf &
                 "Timeframe: 15-minute bars. SL = min(1.5×ATR, cloud edge); TP = 2:1 reward-to-risk."
 
-            ' ATR-based dynamic SL/TP — set pct to 0 so the engine uses _mcCloudSlPrice + ATR
-            TakeProfitPct = 0D
-            StopLossPct = 0D
+            ' Turtle bracket handles SL/TP — user sets dollar amounts; ATR drives bracket step size.
+            InitialTpAmount = 20D  ' $20 initial TP — bracket advances in 0.5×N ATR steps
+            InitialSlAmount = 10D  ' $10 initial SL — bracket ratchets up, never retreats
             Leverage = 5
             Quantity = 1
 
@@ -869,8 +872,8 @@ Namespace TopStepTrader.UI.ViewModels
                 .RawDescription = Description,
                 .CapitalAtRisk = _capitalAtRisk,
                 .Quantity = _quantity,
-                .TakeProfitPct = 0D,
-                .StopLossPct = 0D,
+                .InitialTpAmount = _initialTpAmount,
+                .InitialSlAmount = _initialSlAmount,
                 .Leverage = _leverage,
                 .ScaleInAmount = _scaleInAmount,
                 .ScaleInLeverage = _scaleInLeverage,
@@ -927,8 +930,8 @@ Namespace TopStepTrader.UI.ViewModels
                 "Timeframe: 5-minute bars. SL = trigger extreme +/- tick buffer; TP = 2R. " &
                 "Time filter: 11:00-17:00 UTC (London + NY pre-market). Optimised for NQ."
 
-            TakeProfitPct = 0D
-            StopLossPct = 0D
+            InitialTpAmount = 20D  ' $20 initial TP — Turtle bracket first level
+            InitialSlAmount = 10D  ' $10 initial SL — bracket ratchets up
             Leverage = 5
             Quantity = 1
 
@@ -946,8 +949,8 @@ Namespace TopStepTrader.UI.ViewModels
                 .RawDescription = Description,
                 .CapitalAtRisk = _capitalAtRisk,
                 .Quantity = _quantity,
-                .TakeProfitPct = 0D,
-                .StopLossPct = 0D,
+                .InitialTpAmount = _initialTpAmount,
+                .InitialSlAmount = _initialSlAmount,
                 .Leverage = _leverage,
                 .ScaleInAmount = 0D,
                 .ScaleInLeverage = 1,
@@ -997,6 +1000,87 @@ Namespace TopStepTrader.UI.ViewModels
             LogLine("• 6-step gate: Anchor → Trigger (shallower) → Divergence → Dot → Engulfing candle")
             LogLine("")
             LogLine("━━━  LULT Divergence  ━━━")
+        End Sub
+
+        ''' <summary>
+        ''' One-click activate: builds the BB Squeeze Scalper strategy definition.
+        ''' Dual-mode Bollinger Band scalper on 1-minute bars with 15-second polling.
+        ''' Mode A (Squeeze Breakout): momentum trade when BBW squeezes then breaks out.
+        ''' Mode B (Band Bounce): mean-reversion fade when %B &lt; 0 or &gt; 1 with RSI extreme.
+        ''' TP = 0.4%; SL = 0.2% (2:1 R:R). Max leverage. Tight, high-frequency scalp.
+        ''' </summary>
+        Private Sub ApplyBbSqueezeScalper()
+            Const Description As String =
+                "BB Squeeze Scalper — dual-mode Bollinger Band scalping strategy." & vbLf &
+                "Mode A (Squeeze Breakout): BBW < SMA(BBW,20) for ≥3 bars → close breaks band → " &
+                "EMA5 slope confirms → RSI7 > 50 (Long) / < 50 (Short). Momentum trade in breakout direction." & vbLf &
+                "Mode B (Band Bounce): BBW ≥ SMA(BBW,20) → %B < 0 (Long) / %B > 1 (Short) → " &
+                "RSI7 < 25 (Long) / RSI7 > 75 (Short) → rejection wick ≥ 60% of bar range. Mean-reversion fade." & vbLf &
+                "Timeframe: 1-minute bars. Polling: 15 seconds. TP = 0.4%; SL = 0.2% (2:1 R:R). 5× leverage."
+
+            InitialTpAmount = 8D   ' $8 scalp TP — tight target suits high-frequency exits
+            InitialSlAmount = 4D   ' $4 scalp SL — just beyond band + ATR buffer
+            Leverage = 5           ' Maximum leverage for high-stakes scalping
+            Quantity = 1
+
+            Dim sd As New StrategyDefinition With {
+                .Name = "BB Squeeze Scalper",
+                .Indicator = Core.Enums.StrategyIndicatorType.BbSqueezeScalper,
+                .Condition = Core.Enums.StrategyConditionType.BbSqueezeScalper,
+                .IndicatorPeriod = 25,
+                .SecondaryPeriod = 0,
+                .IndicatorMultiplier = 2.0,
+                .GoLongWhenBelowBands = True,
+                .GoShortWhenAboveBands = True,
+                .TimeframeMinutes = 1,
+                .DurationHours = 8,
+                .RawDescription = Description,
+                .CapitalAtRisk = _capitalAtRisk,
+                .Quantity = _quantity,
+                .InitialTpAmount = _initialTpAmount,
+                .InitialSlAmount = _initialSlAmount,
+                .Leverage = _leverage,
+                .ScaleInAmount = 0D,
+                .ScaleInLeverage = 1,
+                .MinConfidencePct = _minConfidencePct
+            }
+
+            _currentStrategy = sd
+            HasParsedStrategy = True
+            ParsedSummary = "BB Squeeze Scalper | 1-min bars | 8-hr session | $8 TP · $4 SL · 2:1 R:R | 5× leverage | 15s polling"
+            StrategyText = Description
+            ActiveStrategyText = "✔  BB Squeeze Scalper  (1-min · 8hrs · BB12 · %B · RSI7 · EMA5)"
+
+            StrategyNakedDescription =
+                "Every 15 seconds, this strategy watches the latest completed 1-minute bar on your chosen contract " &
+                "and runs one of two modes depending on whether the Bollinger Bands are squeezing or expanding." & vbLf & vbLf &
+                "First it calculates the Band Width (BBW = (Upper − Lower) / Middle × 100). " &
+                "If BBW has been below its own 20-bar average for 3 or more consecutive bars, a SQUEEZE is active — " &
+                "low volatility is coiling energy. The moment price closes outside the band (above the upper for Long, " &
+                "below the lower for Short), and the 5-period EMA slope agrees with the direction, and RSI(7) is above 50 " &
+                "for a Long (or below 50 for a Short), the strategy fires a BREAKOUT trade in the direction of the expansion. " &
+                "This is Mode A — momentum scalp." & vbLf & vbLf &
+                "When no squeeze is present — bands are wide and the market is volatile — the strategy switches to Mode B: " &
+                "BAND BOUNCE. Here it calculates %B (where price sits within the bands: 0 = lower band, 1 = upper band). " &
+                "When %B drops below 0 (price is below the lower band), RSI(7) is below 25 (deeply oversold), and the " &
+                "bar has a lower rejection wick covering 60% or more of its range, a Long fires. " &
+                "The mirror image applies for Shorts. This is a mean-reversion fade back toward the middle band." & vbLf & vbLf &
+                "Both modes target the same exits: $8 take-profit and $4 stop-loss (2:1 R:R). " &
+                "The Turtle bracket advances in 0.5×N ATR steps — SL ratchets up as TP levels are hit." & vbLf & vbLf &
+                "Defaults: 1-min bars · BB(12, 2.0) · $8 TP · $4 SL · 5× leverage · 8-hr session · 15-second polling."
+            HasStrategyDescription = True
+
+            LogEntries.Clear()
+            LogLine("─────────────────────────────────────────────────────────────────────")
+            LogLine("Configure account, contract and risk settings above, then click  ▶ Start Monitoring.")
+            LogLine("")
+            LogLine($"• Defaults: 1-min bars · TP=${_initialTpAmount:F0} · SL=${_initialSlAmount:F0} · Amt=${_capitalAtRisk:F0} · Lvg={_leverage}×")
+            LogLine("• Mode B (Band Bounce): %B < 0 or > 1 + RSI7 extreme + rejection wick ≥ 60% — mean-reversion fade")
+            LogLine("• Mode A (Squeeze Breakout): BBW < SMA(BBW,20) for ≥3 bars + band break + EMA5 slope + RSI7")
+            LogLine("• Dual-mode — automatically switches between Squeeze Breakout and Band Bounce")
+            LogLine("• Polling every 15 seconds — watches for swing highs/lows in near-real-time")
+            LogLine("")
+            LogLine("━━━  BB Squeeze Scalper  ━━━")
         End Sub
 
         ''' <summary>
@@ -1071,8 +1155,8 @@ Namespace TopStepTrader.UI.ViewModels
             ' Apply user overrides
             sd.CapitalAtRisk = _capitalAtRisk
             sd.Quantity = _quantity
-            sd.TakeProfitPct = _takeProfitPct
-            sd.StopLossPct = _stopLossPct
+            sd.InitialTpAmount = _initialTpAmount
+            sd.InitialSlAmount = _initialSlAmount
             sd.Leverage = _leverage
 
             _currentStrategy = sd
@@ -1130,8 +1214,8 @@ Namespace TopStepTrader.UI.ViewModels
             _currentStrategy.ContractId = _selectedContractId.Trim()
             _currentStrategy.CapitalAtRisk = _capitalAtRisk
             _currentStrategy.Quantity = _quantity
-            _currentStrategy.TakeProfitPct = _takeProfitPct
-            _currentStrategy.StopLossPct = _stopLossPct
+            _currentStrategy.InitialTpAmount = _initialTpAmount
+            _currentStrategy.InitialSlAmount = _initialSlAmount
             _currentStrategy.Leverage = _leverage
             _currentStrategy.MinConfidencePct = _minConfidencePct
             _currentStrategy.ScaleInAmount = _scaleInAmount

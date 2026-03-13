@@ -36,19 +36,25 @@ Namespace TopStepTrader.Services.Backtest
         ''' Determine whether the current bar triggers a stop-loss or take-profit exit.
         ''' Returns "StopLoss", "TakeProfit", or Nothing if neither level is hit.
         '''
-        ''' Tick convention: uses config.TickSize (price units per tick).
-        ''' Defaults to 0.25 (MES/MNQ). MGC uses 0.10, MCL uses 0.01.
-        ''' Buy  SL: bar.Low  ≤ entryPrice - (slTicks × tickSize)
-        ''' Buy  TP: bar.High ≥ entryPrice + (tpTicks × tickSize)
-        ''' Sell SL: bar.High ≥ entryPrice + (slTicks × tickSize)
-        ''' Sell TP: bar.Low  ≤ entryPrice - (tpTicks × tickSize)
+        ''' Dollar-based Turtle bracket convention:
+        '''   dollarPerPoint = config.PointValue × config.Quantity
+        '''   slDelta = config.InitialSlAmount / dollarPerPoint   (price units to SL)
+        '''   tpDelta = config.InitialTpAmount / dollarPerPoint   (price units to TP)
+        '''
+        ''' Buy  SL: bar.Low  ≤ entryPrice − slDelta
+        ''' Buy  TP: bar.High ≥ entryPrice + tpDelta
+        ''' Sell SL: bar.High ≥ entryPrice + slDelta
+        ''' Sell TP: bar.Low  ≤ entryPrice − tpDelta
         ''' </summary>
         Friend Function CheckExit(trade As BacktestTrade,
                                    bar As MarketBar,
                                    config As BacktestConfiguration) As String
+            Dim dollarPerPoint = config.PointValue * config.Quantity
+            If dollarPerPoint = 0D Then Return Nothing
+
             Dim isBuy = trade.Side = "Buy"
-            Dim stopDelta = config.StopLossTicks * config.TickSize
-            Dim tpDelta = config.TakeProfitTicks * config.TickSize
+            Dim stopDelta = Math.Round(config.InitialSlAmount / dollarPerPoint, 4)
+            Dim tpDelta = Math.Round(config.InitialTpAmount / dollarPerPoint, 4)
 
             If isBuy Then
                 If bar.Low <= trade.EntryPrice - stopDelta Then Return "StopLoss"
@@ -71,22 +77,23 @@ Namespace TopStepTrader.Services.Backtest
         ''' This guarantees StopLoss always produces a loss and TakeProfit always a profit.
         '''
         ''' Rule:
-        '''   StopLoss  — Buy:  entry - stopDelta   (fill below entry = loss)
-        '''   StopLoss  — Sell: entry + stopDelta   (fill above entry = loss)
-        '''   TakeProfit— Buy:  entry + tpDelta     (fill above entry = profit)
-        '''   TakeProfit— Sell: entry - tpDelta     (fill below entry = profit)
-        '''   EndOfData — any:  bar.Close           (exit at market; no level was hit)
+        '''   StopLoss  — Buy:  entry − slDelta   (fill below entry = loss)
+        '''   StopLoss  — Sell: entry + slDelta   (fill above entry = loss)
+        '''   TakeProfit— Buy:  entry + tpDelta   (fill above entry = profit)
+        '''   TakeProfit— Sell: entry − tpDelta   (fill below entry = profit)
+        '''   EndOfData — any:  bar.Close         (exit at market; no level was hit)
         ''' </summary>
         Friend Function GetExitPrice(trade As BacktestTrade,
                                       bar As MarketBar,
                                       exitReason As String,
                                       config As BacktestConfiguration) As Decimal
+            Dim dollarPerPoint = config.PointValue * config.Quantity
             Dim isBuy = trade.Side = "Buy"
-            If exitReason = "StopLoss" Then
-                Dim stopDelta = config.StopLossTicks * config.TickSize
+            If exitReason = "StopLoss" AndAlso dollarPerPoint > 0D Then
+                Dim stopDelta = Math.Round(config.InitialSlAmount / dollarPerPoint, 4)
                 Return If(isBuy, trade.EntryPrice - stopDelta, trade.EntryPrice + stopDelta)
-            ElseIf exitReason = "TakeProfit" Then
-                Dim tpDelta = config.TakeProfitTicks * config.TickSize
+            ElseIf exitReason = "TakeProfit" AndAlso dollarPerPoint > 0D Then
+                Dim tpDelta = Math.Round(config.InitialTpAmount / dollarPerPoint, 4)
                 Return If(isBuy, trade.EntryPrice + tpDelta, trade.EntryPrice - tpDelta)
             Else
                 Return bar.Close   ' EndOfData, NeutralExit, or unknown reason — exit at bar close

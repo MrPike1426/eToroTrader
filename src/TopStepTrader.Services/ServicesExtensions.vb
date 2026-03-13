@@ -5,6 +5,7 @@ Imports TopStepTrader.Services.AI
 Imports TopStepTrader.Services.Auth
 Imports TopStepTrader.Services.Background
 Imports TopStepTrader.Services.Backtest
+Imports TopStepTrader.Services.Diagnostics
 Imports TopStepTrader.Services.Feedback
 Imports TopStepTrader.Services.Market
 Imports TopStepTrader.Services.Risk
@@ -50,6 +51,9 @@ Namespace TopStepTrader.Services
             services.AddScoped(Of IOrderService, OrderService)()
             services.AddScoped(Of AutoExecutionService)()
             services.AddScoped(Of TrendAnalysisService)()
+
+            ' ── Diagnostic logger (one instance per engine — Transient matches engine lifetime)
+            services.AddTransient(Of DiagnosticLogger)()
 
             ' ── AI-Assisted Trading
             services.AddScoped(Of StrategyParserService)()

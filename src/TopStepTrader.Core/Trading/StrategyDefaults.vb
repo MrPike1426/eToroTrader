@@ -16,13 +16,13 @@ Namespace TopStepTrader.Core.Trading
         ''' All registered strategies and their default parameters.
         ''' Key lookup is case-insensitive.
         ''' </summary>
-        ' eToro AI Trading path: Capital (USD cash), Qty, TakeProfitPct (%), StopLossPct (%)
-        ' Values are percentage-based, NOT tick offsets (TICKET-022).
-        ' TP 4% / SL 1.5% -> 2.67:1 R:R (documentation minimum: 2:1).
+        ' eToro AI Trading path: Capital (USD cash), Qty, InitialTpAmount ($), InitialSlAmount ($).
+        ' Dollar-based Turtle bracket — engine converts to absolute prices using ATR and leverage.
         Public Shared ReadOnly Defaults As IReadOnlyDictionary(Of String, StrategyParameterSet) =
             New Dictionary(Of String, StrategyParameterSet)(StringComparer.OrdinalIgnoreCase) From {
-                {"EMA/RSI Combined", New StrategyParameterSet("200", "1", "4.0", "1.5")},
-                {"Multi-Confluence Engine", New StrategyParameterSet("200", "1", "0", "0")}
+                {"EMA/RSI Combined", New StrategyParameterSet("200", "1", "20", "10")},
+                {"Multi-Confluence Engine", New StrategyParameterSet("200", "1", "20", "10")},
+                {"BB Squeeze Scalper", New StrategyParameterSet("300", "1", "8", "4")}
             }
 
         ''' <summary>
@@ -41,22 +41,22 @@ Namespace TopStepTrader.Core.Trading
     ''' <summary>
     ''' Immutable set of capital/quantity/TP/SL defaults for a strategy.
     ''' Values are stored as strings to match the ViewModel's text-bound input fields.
-    ''' TakeProfitPct and StopLossPct hold percentage values for the eToro AI Trading path.
+    ''' InitialTpAmount and InitialSlAmount are dollar P&amp;L amounts for the Turtle bracket.
     ''' </summary>
     Public NotInheritable Class StrategyParameterSet
 
         Public ReadOnly Property Capital As String
         Public ReadOnly Property Qty As String
-        ''' <summary>Take-profit as a percentage of entry price (e.g. "4.0" = 4.0%).</summary>
-        Public ReadOnly Property TakeProfitPct As String
-        ''' <summary>Stop-loss as a percentage of entry price (e.g. "1.5" = 1.5%).</summary>
-        Public ReadOnly Property StopLossPct As String
+        ''' <summary>Initial take-profit in dollars (e.g. "20" = $20). First Turtle bracket target.</summary>
+        Public ReadOnly Property InitialTpAmount As String
+        ''' <summary>Initial stop-loss in dollars (e.g. "10" = $10). Hard stop for Bracket 0.</summary>
+        Public ReadOnly Property InitialSlAmount As String
 
         Public Sub New(capital As String, qty As String, tp As String, sl As String)
             Me.Capital = capital
             Me.Qty = qty
-            Me.TakeProfitPct = tp
-            Me.StopLossPct = sl
+            Me.InitialTpAmount = tp
+            Me.InitialSlAmount = sl
         End Sub
 
     End Class

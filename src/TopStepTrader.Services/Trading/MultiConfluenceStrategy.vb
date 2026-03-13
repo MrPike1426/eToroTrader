@@ -26,6 +26,20 @@ Namespace TopStepTrader.Services.Trading
         Public Property StatusLine As String = String.Empty
         ''' <summary>Raw ADX(14) value at bar-check time. Forwarded to ConfidenceUpdatedEventArgs so the UI card can display it.</summary>
         Public Property AdxValue As Single = 0F
+        ' ── Extended indicator snapshot for the Hydra grid display ──────────────
+        Public Property Cloud1 As Decimal = 0D         ' higher of SpanA / SpanB
+        Public Property Cloud2 As Decimal = 0D         ' lower of SpanA / SpanB
+        Public Property Tenkan As Decimal = 0D
+        Public Property Kijun As Decimal = 0D
+        Public Property Ema21 As Decimal = 0D
+        Public Property Ema50 As Decimal = 0D
+        Public Property PlusDI As Single = 0F
+        Public Property MinusDI As Single = 0F
+        Public Property MacdHist As Single = 0F
+        Public Property MacdHistPrev As Single = 0F
+        Public Property StochRsiK As Single = 0F
+        Public Property LongCount As Integer = 0
+        Public Property ShortCount As Integer = 0
     End Class
 
     ''' <summary>
@@ -136,7 +150,7 @@ Namespace TopStepTrader.Services.Trading
             Dim lc2 = (lastClose > CDec(ema21Now))                               ' 2. Price above EMA 21
             Dim lc3 = (tenkanKijunValid AndAlso tenkanNow > kijunNow)            ' 3. Tenkan-sen > Kijun-sen
             Dim lc4 = (lagIdx >= 0 AndAlso lastClose > lagClose)                 ' 4. Chikou above price 26 bars ago
-            Dim lc5 = (adxNow >= 25.0F AndAlso plusDINow > minusDINow)           ' 5. ADX > 25, DI+ > DI-
+            Dim lc5 = (adxNow >= 19.9F AndAlso plusDINow > minusDINow)           ' 5. ADX
             Dim lc6 = (histNow > 0 AndAlso histNow > histPrev _
                        AndAlso Not Single.IsNaN(histPrev))                       ' 6. MACD histogram positive and rising
             Dim lc7 = (Not Single.IsNaN(stochKNow) AndAlso stochKNow < 0.8F)    ' 7. StochRSI K < 0.8
@@ -146,7 +160,7 @@ Namespace TopStepTrader.Services.Trading
             Dim sc2 = (lastClose < CDec(ema21Now))                               ' 2. Price below EMA 21
             Dim sc3 = (tenkanKijunValid AndAlso tenkanNow < kijunNow)            ' 3. Tenkan-sen < Kijun-sen
             Dim sc4 = (lagIdx >= 0 AndAlso lastClose < lagClose)                 ' 4. Chikou below price 26 bars ago
-            Dim sc5 = (adxNow >= 25.0F AndAlso minusDINow > plusDINow)           ' 5. ADX > 25, DI- > DI+
+            Dim sc5 = (adxNow >= 19.9F AndAlso minusDINow > plusDINow)           ' 5. ADX
             Dim sc6 = (histNow < 0 AndAlso histNow < histPrev _
                        AndAlso Not Single.IsNaN(histPrev))                       ' 6. MACD histogram negative and falling
             Dim sc7 = (Not Single.IsNaN(stochKNow) AndAlso stochKNow > 0.2F)    ' 7. StochRSI K > 0.2
@@ -157,6 +171,19 @@ Namespace TopStepTrader.Services.Trading
             result.BullScore = CInt(longCount / 7 * 100)
             result.BearScore = CInt(shortCount / 7 * 100)
             result.AdxValue = adxNow
+            result.Cloud1 = cloudTop
+            result.Cloud2 = cloudBottom
+            result.Tenkan = If(Single.IsNaN(tenkanNow), 0D, CDec(tenkanNow))
+            result.Kijun = If(Single.IsNaN(kijunNow), 0D, CDec(kijunNow))
+            result.Ema21 = CDec(ema21Now)
+            result.Ema50 = CDec(ema50Now)
+            result.PlusDI = plusDINow
+            result.MinusDI = minusDINow
+            result.MacdHist = histNow
+            result.MacdHistPrev = If(Single.IsNaN(histPrev), 0F, histPrev)
+            result.StochRsiK = If(Single.IsNaN(stochKNow), 0F, stochKNow)
+            result.LongCount = longCount
+            result.ShortCount = shortCount
 
             ' ── Build diagnostic status line ───────────────────────────────────────
             result.StatusLine =

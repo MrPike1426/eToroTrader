@@ -215,6 +215,51 @@ Namespace TopStepTrader.ML.Features
             Return (upper, middle, lower)
         End Function
 
+        ''' <summary>
+        ''' Bollinger Band Width — (Upper − Lower) / Middle × 100.
+        ''' Returns NaN for bars before the warm-up period.
+        ''' A contracting BBW signals a squeeze (low volatility coiling).
+        ''' </summary>
+        Public Function BollingerBandWidth(closes As IList(Of Decimal),
+                                           period As Integer,
+                                           Optional stdDevMultiplier As Double = 2.0) As Single()
+            Dim bands = BollingerBands(closes, period, stdDevMultiplier)
+            Dim n = closes.Count
+            Dim result(n - 1) As Single
+            For i = 0 To n - 1
+                If Single.IsNaN(bands.Upper(i)) OrElse Single.IsNaN(bands.Middle(i)) OrElse
+                   bands.Middle(i) = 0.0F Then
+                    result(i) = Single.NaN
+                Else
+                    result(i) = CSng((CDbl(bands.Upper(i)) - CDbl(bands.Lower(i))) /
+                                     CDbl(bands.Middle(i)) * 100.0)
+                End If
+            Next
+            Return result
+        End Function
+
+        ''' <summary>
+        ''' Bollinger %B — where price sits relative to the bands.
+        ''' 0 = at lower band, 1 = at upper band, &lt;0 = below lower band, &gt;1 = above upper band.
+        ''' Returns NaN for bars before the warm-up period or when band width is zero.
+        ''' </summary>
+        Public Function BollingerPercentB(closes As IList(Of Decimal),
+                                          period As Integer,
+                                          Optional stdDevMultiplier As Double = 2.0) As Single()
+            Dim bands = BollingerBands(closes, period, stdDevMultiplier)
+            Dim n = closes.Count
+            Dim result(n - 1) As Single
+            For i = 0 To n - 1
+                Dim bw = CDbl(bands.Upper(i)) - CDbl(bands.Lower(i))
+                If Single.IsNaN(bands.Upper(i)) OrElse bw = 0.0 Then
+                    result(i) = Single.NaN
+                Else
+                    result(i) = CSng((CDbl(closes(i)) - CDbl(bands.Lower(i))) / bw)
+                End If
+            Next
+            Return result
+        End Function
+
         ' ── Helpers ──────────────────────────────────────────────────────────
 
         ' ── DMI / ADX ────────────────────────────────────────────────────────────
@@ -524,6 +569,155 @@ Namespace TopStepTrader.ML.Features
             Next
 
             Return (wt1, wt2)
+        End Function
+
+        ' ── SuperTrend ────────────────────────────────────────────────────────────
+
+        ''' <summary>
+        ''' SuperTrend indicator — ATR-based dynamic support/resistance with trend direction.
+        '''
+        ''' Algorithm:
+        '''   HL2          = (High + Low) / 2
+        '''   Basic Upper  = HL2 + multiplier × ATR(period)
+        '''   Basic Lower  = HL2 − multiplier × ATR(period)
+        '''   Final Upper  = min(Basic Upper, prev Final Upper) when prev close &gt; prev Final Upper;
+        '''                  otherwise Basic Upper
+        '''   Final Lower  = max(Basic Lower, prev Final Lower) when prev close &lt; prev Final Lower;
+        '''                  otherwise Basic Lower
+        '''   Direction    = +1 (up-trend) when close &gt; prev Final Upper
+        '''                = −1 (down-trend) when close &lt; prev Final Lower
+        '''                = prev Direction otherwise
+        '''   Line         = Final Lower when Direction = +1 (acts as support)
+        '''                = Final Upper when Direction = −1 (acts as resistance)
+        '''
+        ''' Returns:
+        '''   Line      — the SuperTrend price line (NaN during ATR warm-up).
+        '''   Direction — +1 for up-trend, −1 for down-trend (0 during warm-up).
+        ''' </summary>
+        Public Function SuperTrend(
+                highs As IList(Of Decimal),
+                lows As IList(Of Decimal),
+                closes As IList(Of Decimal),
+                Optional period As Integer = 10,
+                Optional multiplier As Double = 3.0) As (Line As Single(), Direction As Single())
+
+            Dim n = Math.Min(Math.Min(highs.Count, lows.Count), closes.Count)
+            Dim lineArr(n - 1) As Single
+            Dim dirArr(n - 1) As Single
+            For i = 0 To n - 1
+                lineArr(i) = Single.NaN
+                dirArr(i) = 0.0F
+            Next
+            If n < period + 1 Then Return (lineArr, dirArr)
+
+            Dim atrArr = ATR(highs, lows, closes, period)
+
+            ' State variables
+            Dim finalUpper As Double = 0
+            Dim finalLower As Double = 0
+            Dim direction As Integer = 1   ' +1 = uptrend, -1 = downtrend
+
+            For i = period To n - 1
+                Dim atrVal = atrArr(i)
+                If Single.IsNaN(atrVal) Then Continue For
+
+                Dim hl2 = (CDbl(highs(i)) + CDbl(lows(i))) / 2.0
+                Dim basicUpper = hl2 + multiplier * CDbl(atrVal)
+                Dim basicLower = hl2 - multiplier * CDbl(atrVal)
+
+                ' Adjust Final Upper/Lower bands using previous bar's close
+                Dim prevClose = CDbl(closes(i - 1))
+
+                Dim newFinalUpper As Double
+                Dim newFinalLower As Double
+
+                If i = period Then
+                    ' First valid bar — seed the bands
+                    newFinalUpper = basicUpper
+                    newFinalLower = basicLower
+                Else
+                    ' Final Upper = Basic Upper unless previous close > previous Final Upper
+                    '   in which case Final Upper can only decrease (locks in support ceiling)
+                    newFinalUpper = If(basicUpper < finalUpper OrElse prevClose > finalUpper,
+                                      basicUpper, finalUpper)
+
+                    ' Final Lower = Basic Lower unless previous close < previous Final Lower
+                    '   in which case Final Lower can only increase (locks in support floor)
+                    newFinalLower = If(basicLower > finalLower OrElse prevClose < finalLower,
+                                      basicLower, finalLower)
+                End If
+
+                ' Determine trend direction from close vs finalUpper/finalLower
+                Dim closeNow = CDbl(closes(i))
+                If closeNow > newFinalUpper Then
+                    direction = 1
+                ElseIf closeNow < newFinalLower Then
+                    direction = -1
+                ' else direction unchanged
+                End If
+
+                lineArr(i) = If(direction = 1, CSng(newFinalLower), CSng(newFinalUpper))
+                dirArr(i) = direction
+
+                finalUpper = newFinalUpper
+                finalLower = newFinalLower
+            Next
+
+            Return (lineArr, dirArr)
+        End Function
+
+        ' ── Donchian Channel ──────────────────────────────────────────────────────
+
+        ''' <summary>
+        ''' Donchian Channel — rolling highest high / lowest low / midpoint over a given period.
+        '''
+        ''' Upper[i] = max(High[i−period+1 .. i])
+        ''' Lower[i] = min(Low[i−period+1 .. i])
+        ''' Middle[i] = (Upper[i] + Lower[i]) / 2
+        '''
+        ''' All arrays are NaN-padded for the first (period−1) bars.
+        ''' </summary>
+        Public Function DonchianChannel(
+                highs As IList(Of Decimal),
+                lows As IList(Of Decimal),
+                period As Integer) As (Upper As Single(), Lower As Single(), Middle As Single())
+
+            Dim n = Math.Min(highs.Count, lows.Count)
+            Dim upper(n - 1) As Single
+            Dim lower(n - 1) As Single
+            Dim middle(n - 1) As Single
+            For i = 0 To n - 1
+                upper(i) = Single.NaN
+                lower(i) = Single.NaN
+                middle(i) = Single.NaN
+            Next
+            If n < period OrElse period <= 0 Then Return (upper, lower, middle)
+
+            For i = period - 1 To n - 1
+                Dim hi = CDbl(highs(i))
+                Dim lo = CDbl(lows(i))
+                For j = i - period + 1 To i
+                    If CDbl(highs(j)) > hi Then hi = CDbl(highs(j))
+                    If CDbl(lows(j)) < lo Then lo = CDbl(lows(j))
+                Next
+                upper(i) = CSng(hi)
+                lower(i) = CSng(lo)
+                middle(i) = CSng((hi + lo) / 2.0)
+            Next
+
+            Return (upper, lower, middle)
+        End Function
+
+        ' ── ConnorsRSI-2 components ───────────────────────────────────────────────
+
+        ''' <summary>
+        ''' RSI(2) — convenience wrapper using the generic RSI function with period = 2.
+        ''' Used by the Connors RSI-2 strategy where the short 2-period RSI identifies
+        ''' overbought/oversold dips against a SMA(200) long-term trend filter.
+        ''' Identical to calling RSI(closes, 2); provided here for naming clarity.
+        ''' </summary>
+        Public Function Rsi2(closes As IList(Of Decimal)) As Single()
+            Return RSI(closes, 2)
         End Function
 
         ' ── Helpers ──────────────────────────────────────────────────────────────

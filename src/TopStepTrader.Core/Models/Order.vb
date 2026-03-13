@@ -40,6 +40,15 @@ Namespace TopStepTrader.Core.Models
         ''' <summary>Leverage multiplier for eToro order (default 1 = no leverage).</summary>
         Public Property Leverage As Integer = 1
 
+        ''' <summary>
+        ''' When True, eToro's native Trailing Stop Loss is enabled on the position.
+        ''' The broker automatically moves StopLossRate whenever price improves, keeping
+        ''' a constant gap equal to (openRate − stopLossRate) from the best price reached.
+        ''' Documented on the by-amount and by-units open endpoints.  NOT available as a
+        ''' standalone edit on the undocumented PUT /positions/{id} endpoint — set at open time.
+        ''' </summary>
+        Public Property IsTslEnabled As Boolean = False
+
         Public Property Status As OrderStatus
         Public Property PlacedAt As DateTimeOffset
         Public Property FilledAt As DateTimeOffset?

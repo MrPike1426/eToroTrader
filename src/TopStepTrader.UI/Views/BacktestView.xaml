@@ -306,15 +306,15 @@
                             </StackPanel>
 
                             <TextBlock Grid.Row="2" Grid.Column="3"
-                                       Text="TP / SL (ticks):" VerticalAlignment="Center"
+                                       Text="TP $ / SL $:" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextSecondaryBrush}"/>
                             <StackPanel Grid.Row="2" Grid.Column="4" Orientation="Horizontal">
-                                <TextBox Text="{Binding TakeProfitTicks, UpdateSourceTrigger=PropertyChanged}"
-                                         Width="50" ToolTip="Take profit ticks"/>
+                                <TextBox Text="{Binding InitialTpAmount, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="50" ToolTip="Initial take-profit in dollars (e.g. 20)"/>
                                 <TextBlock Text="/" VerticalAlignment="Center" Margin="6,0,6,0"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
-                                <TextBox Text="{Binding StopLossTicks, UpdateSourceTrigger=PropertyChanged}"
-                                         Width="50" ToolTip="Stop loss ticks"/>
+                                <TextBox Text="{Binding InitialSlAmount, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="50" ToolTip="Initial stop-loss in dollars (e.g. 10)"/>
                             </StackPanel>
 
                             <!-- Row 4 ── Start Date | End Date ──────────── -->
@@ -447,18 +447,21 @@
                                         </StackPanel>
                                     </Button>
 
-                                    <!-- 4. Placeholder -->
-                                    <Button IsEnabled="False"
+                                    <!-- 4. BB Squeeze Scalper -->
+                                    <Button Command="{Binding SelectBbSqueezeScalperCommand}"
                                             Style="{StaticResource StrategyCardStyle}"
                                             Margin="0"
-                                            ToolTip="Coming soon">
+                                            ToolTip="Dual-mode BB scalper — Mode A: Squeeze Breakout (BBW &lt; SMA(BBW,20) for ≥3 bars then close breaks outer band, EMA5 slope + RSI7 confirm) · Mode B: Band Bounce (%B &lt; 0 or &gt; 1, RSI7 extreme, rejection wick ≥60%). TP=0.4% · SL=0.2% · 1-min bars · 5× leverage · 15s polling.">
                                         <StackPanel>
-                                            <TextBlock Text="⚙  Strategy 4"
+                                            <TextBlock Text="📊  BB Squeeze Scalper"
                                                        FontWeight="SemiBold" FontSize="12"
-                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
-                                            <TextBlock Text="In Development"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="BB(12) · %B · RSI7 · EMA5 · ATR10"
                                                        FontSize="10" Margin="0,2,0,0"
                                                        Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Text="1-min bars · 0.4%/0.2% scalp · 5× lvg"
+                                                       FontSize="9" Margin="0,1,0,0"
+                                                       Foreground="{StaticResource AccentBrush}"/>
                                         </StackPanel>
                                     </Button>
 

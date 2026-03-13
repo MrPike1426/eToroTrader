@@ -45,8 +45,8 @@ Namespace TopStepTrader.Tests.Trading
                 .DurationHours = 8,
                 .GoLongWhenBelowBands = True,
                 .GoShortWhenAboveBands = True,
-                .StopLossPct = slPct,
-                .TakeProfitPct = tpPct,
+                .InitialSlAmount = slPct,
+                .InitialTpAmount = tpPct,
                 .Leverage = leverage,
                 .CapitalAtRisk = capitalAtRisk,
                 .MinConfidencePct = minConfidencePct
@@ -171,25 +171,25 @@ Namespace TopStepTrader.Tests.Trading
         ' ══════════════════════════════════════════════════════════════════
 
         <Fact>
-        Public Sub SlPct_Zero_MeansNoSlOrder()
+        Public Sub SlAmount_Zero_MeansNoSlOrder()
             Dim strategy = BuildStrategy("OIL", slPct:=0D, tpPct:=1.5D, capitalAtRisk:=1000D)
-            ' Engine guard: If _strategy.StopLossPct > 0 Then ... slPriceVal = ...
-            Assert.Equal(0D, strategy.StopLossPct)
-            ' slPriceVal would remain Nothing → StopLossRate = null in request → no SL bracket
+            ' Engine guard: If _strategy.InitialSlAmount > 0 Then ... bracket initialised with SL price
+            Assert.Equal(0D, strategy.InitialSlAmount)
+            ' slPrice would remain 0 → no SL bracket placed by TurtleBracketManager
         End Sub
 
         <Fact>
-        Public Sub TpPct_Zero_MeansNoTpOrder()
+        Public Sub TpAmount_Zero_MeansNoTpOrder()
             Dim strategy = BuildStrategy("OIL", slPct:=0.75D, tpPct:=0D, capitalAtRisk:=1000D)
-            Assert.Equal(0D, strategy.TakeProfitPct)
+            Assert.Equal(0D, strategy.InitialTpAmount)
         End Sub
 
         <Fact>
-        Public Sub BothPct_Zero_NoBrackets_OrderStillValidToPlace()
+        Public Sub BothAmounts_Zero_NoBrackets_OrderStillValidToPlace()
             ' A trade can be opened without SL/TP — just a market open with no brackets.
             Dim strategy = BuildStrategy("OIL", slPct:=0D, tpPct:=0D, capitalAtRisk:=1000D)
-            Assert.Equal(0D, strategy.StopLossPct)
-            Assert.Equal(0D, strategy.TakeProfitPct)
+            Assert.Equal(0D, strategy.InitialSlAmount)
+            Assert.Equal(0D, strategy.InitialTpAmount)
         End Sub
 
         ' ══════════════════════════════════════════════════════════════════
@@ -434,30 +434,30 @@ Namespace TopStepTrader.Tests.Trading
         ' ══════════════════════════════════════════════════════════════════
 
         <Fact>
-        Public Sub StrategyDefinition_NewPctFields_DefaultToZero()
+        Public Sub StrategyDefinition_NewDollarFields_DefaultToTwentyAndTen()
             Dim sd As New StrategyDefinition()
 
-            Assert.Equal(0D, sd.TakeProfitPct)
-            Assert.Equal(0D, sd.StopLossPct)
+            Assert.Equal(20D, sd.InitialTpAmount)
+            Assert.Equal(10D, sd.InitialSlAmount)
             Assert.Equal(1, sd.Leverage)
         End Sub
 
         <Fact>
-        Public Sub StrategyDefinition_PctFields_RoundTrip()
+        Public Sub StrategyDefinition_DollarFields_RoundTrip()
             Dim sd = BuildStrategy("OIL", slPct:=0.75D, tpPct:=1.5D, capitalAtRisk:=1000D, leverage:=2)
 
-            Assert.Equal(0.75D, sd.StopLossPct)
-            Assert.Equal(1.5D, sd.TakeProfitPct)
+            Assert.Equal(0.75D, sd.InitialSlAmount)
+            Assert.Equal(1.5D, sd.InitialTpAmount)
             Assert.Equal(2, sd.Leverage)
         End Sub
 
         <Fact>
-        Public Sub StrategyDefinition_Summary_ShowsPctWhenSet()
+        Public Sub StrategyDefinition_Summary_ShowsDollarAmountWhenSet()
             Dim sd = BuildStrategy("OIL", slPct:=0.75D, tpPct:=1.5D, capitalAtRisk:=1000D)
             Dim summary = sd.Summary
 
-            Assert.Contains("TP:1.50%", summary)
-            Assert.Contains("SL:0.75%", summary)
+            Assert.Contains("TP:$2", summary)   ' 1.5D rounds to $2 with :F0
+            Assert.Contains("SL:$1", summary)   ' 0.75D rounds to $1 with :F0
         End Sub
 
         ' ══════════════════════════════════════════════════════════════════

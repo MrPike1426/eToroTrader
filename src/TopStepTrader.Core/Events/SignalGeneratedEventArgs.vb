@@ -171,6 +171,57 @@ Namespace TopStepTrader.Core.Events
             Me.AdxValue = adxValue
             Me.LastClose = lastClose
         End Sub
+
+        ' ── Extended multi-confluence indicator snapshot ─────────────────────────
+        ' Set via object initialiser after construction; default to 0 / "not available".
+        Public Property Cloud1 As Decimal = 0D
+        Public Property Cloud2 As Decimal = 0D
+        Public Property Tenkan As Decimal = 0D
+        Public Property Kijun As Decimal = 0D
+        Public Property Ema21 As Decimal = 0D
+        Public Property Ema50 As Decimal = 0D
+        Public Property PlusDI As Single = 0F
+        Public Property MinusDI As Single = 0F
+        Public Property MacdHist As Single = 0F
+        Public Property MacdHistPrev As Single = 0F
+        Public Property StochRsiK As Single = 0F
+        Public Property LongCount As Integer = 0
+        Public Property ShortCount As Integer = 0
+        ''' <summary>Total number of conditions evaluated (7 for MultiConfluence; 6 for EmaRsiCombined; 0 for other strategies).</summary>
+        Public Property TotalConditions As Integer = 0
+
+        ' ── EMA/RSI Combined extended snapshot ──────────────────────────────────
+        ''' <summary>RSI14 value at bar-check time (EMA/RSI Combined). 0 when not applicable.</summary>
+        Public Property Rsi14 As Single = 0F
+        ''' <summary>True when EMA21 is higher than its previous-bar value (EMA/RSI Combined condition 5). False when not applicable.</summary>
+        Public Property Ema21Rising As Boolean = False
+        ''' <summary>True when the majority of the last 3 candles closed above their open (EMA/RSI Combined condition 6). False when not applicable.</summary>
+        Public Property RecentCandlesBullish As Boolean = False
+    End Class
+
+    ''' <summary>
+    ''' Raised by StrategyExecutionEngine when the Turtle bracket is first placed or advances a step.
+    ''' </summary>
+    Public Class TurtleBracketChangedEventArgs
+        Inherits EventArgs
+        Public ReadOnly Property BracketNumber As Integer
+        Public ReadOnly Property SlPrice As Decimal
+        Public ReadOnly Property TpPrice As Decimal
+        ''' <summary>
+        ''' True when this event represents a bracket advance triggered by a price level being
+        ''' hit (TP reached → SL steps up).  False for initial bracket placement on order entry
+        ''' or bracket reattachment on engine restart.
+        ''' The UI uses this flag to decide whether to display the "Turtle Applied" status
+        ''' message — only a genuine advance warrants user-visible confirmation.
+        ''' </summary>
+        Public ReadOnly Property IsAdvance As Boolean
+        Public Sub New(bracketNumber As Integer, slPrice As Decimal, tpPrice As Decimal,
+                       isAdvance As Boolean)
+            Me.BracketNumber = bracketNumber
+            Me.SlPrice = slPrice
+            Me.TpPrice = tpPrice
+            Me.IsAdvance = isAdvance
+        End Sub
     End Class
 
 End Namespace

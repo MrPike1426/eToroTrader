@@ -70,6 +70,8 @@ Namespace TopStepTrader.Services.Trading
         Private _lastFinalAmount As Decimal = 0D
         Private _lastLeverage As Integer = 1
         Private _positionOpenedAt As DateTimeOffset = DateTimeOffset.MinValue
+        Private _lastPositionClosedAt As DateTimeOffset = DateTimeOffset.MinValue
+        Private Const ReEntryCooldownSeconds As Integer = 60
         Private _lastApiPnl As Decimal = 0D
         Private _mcCloudSlPrice As Decimal? = Nothing
         Private _lultTriggerExtreme As Decimal? = Nothing
@@ -91,23 +93,15 @@ Namespace TopStepTrader.Services.Trading
         Private _openTradeCount As Integer = 0
         Private _currentAtrValue As Decimal = 0D
         Private _currentEma21 As Decimal = 0D
-        Private Const AtrSlMultiplier As Double = 1.5
-        Private Const AtrTpMultiplier As Double = 3.0
         Private Const ScaleInPullbackTolerance As Double = 0.001
         Private Const ScaleInBullThreshold As Integer = 80
         Private Const ScaleInBearThreshold As Integer = 20
 
-        ' ── Stepped trailing bracket constants ──────────────────────────────────────
-        Private Shared ReadOnly TrailTriggerPct As Decimal = 2.0D
-        Private Shared ReadOnly TrailStepPct As Decimal = 0.5D
-        Private Shared ReadOnly TrailSlOffset As Decimal = 1.5D
-        Private Shared ReadOnly TrailDefaultTpAbove As Decimal = 2.0D
-
-        ' ── Stepped trailing bracket state (reset per position) ─────────────────────
-        Private _trailLastSteps As Integer = -1
-        Private _trailTpAbove As Decimal = 2.0D
-        Private _trailTrackedSlPrice As Decimal = 0D
-        Private _trailTrackedTpPrice As Decimal = 0D
+        ' ── Turtle bracket state (reset per position) ───────────────────────────────
+        Private _turtleBracket As TopStepTrader.Core.Trading.TurtleBracketState = Nothing
+        ' Running sum of DollarPerPoint across ALL open positions (initial + scale-ins).
+        ' Rescaled after each scale-in so SL/TP advancement reflects the total portfolio P&L.
+        Private _totalDollarPerPoint As Decimal = 0D
 
         Public Sub New(ingestionService As BarIngestionService,
                        orderService As IOrderService,
@@ -135,6 +129,7 @@ Namespace TopStepTrader.Services.Trading
             _openPositionId = Nothing
             _openTradeCount = 0
             _positionOpenedAt = DateTimeOffset.MinValue
+            _lastPositionClosedAt = DateTimeOffset.MinValue
             _lastApiPnl = 0D
             _mcCloudSlPrice = Nothing
             _lultTriggerExtreme = Nothing
@@ -185,8 +180,11 @@ Namespace TopStepTrader.Services.Trading
                          End Try
                      End Function)
 
+            ' 3-second initial delay gives the startup position-check Task.Run time to complete
+            ' before the first bar-check tick fires, eliminating a race where _positionOpen
+            ' could still be False when the timer's first callback runs.
             _timer = New System.Threading.Timer(AddressOf TimerCallback, Nothing,
-                                                TimeSpan.Zero, TimeSpan.FromSeconds(30))
+                                                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(30))
         End Sub
 
         Public Sub [Stop](Optional reason As String = "Stopped by user")
@@ -410,7 +408,7 @@ Namespace TopStepTrader.Services.Trading
 
                     Dim dmiResult = TechnicalIndicators.DMI(highs, lows, closes)
                     Dim adxNow = TechnicalIndicators.LastValid(dmiResult.ADX)
-                    Dim adxGatePassed = (adxNow >= 25.0F)
+                    Dim adxGatePassed = (adxNow >= 19.9F)
 
                     Dim atrVals = TechnicalIndicators.ATR(highs, lows, closes, 14)
                     _currentAtrValue = CDec(TechnicalIndicators.LastValid(atrVals))
@@ -418,7 +416,7 @@ Namespace TopStepTrader.Services.Trading
                     RaiseEvent ConfidenceUpdated(Me, New ConfidenceUpdatedEventArgs(CInt(upPct), CInt(downPct), adxGatePassed, CSng(adxNow), lastClose))
 
                     If Not adxGatePassed Then
-                        Log($"Bar checked — ADX={adxNow:F1} < 25 (ranging market) — signal suppressed | EMA/RSI: UP={upPct:F0}% DOWN={downPct:F0}% | ATR={_currentAtrValue:F4} | {remStr}")
+                        Log($"Bar checked — ADX={adxNow:F1} < 20 (ranging market) — signal suppressed | EMA/RSI: UP={upPct:F0}% DOWN={downPct:F0}% | ATR={_currentAtrValue:F4} | {remStr}")
                     ElseIf upPct >= minPct Then
                         _pendingConfidencePct = CInt(upPct)
                         Log($"✅ EMA/RSI weighted: UP={upPct:F0}% ≥ {minPct}% — LONG signal! Close={lastClose:F2} EMA21={ema21Now:F2} EMA50={ema50Now:F2} RSI={rsiVal:F1} ADX={adxNow:F1}")
@@ -564,6 +562,7 @@ Namespace TopStepTrader.Services.Trading
                         Next
                         _openTradeCount = 0
                         _lastApiPnl = 0D
+                        _lastPositionClosedAt = DateTimeOffset.UtcNow  ' start re-entry cooldown
                         ResetTrailState()
                     End If
                 End If
@@ -592,6 +591,9 @@ Namespace TopStepTrader.Services.Trading
                 If side.HasValue Then
                     If _positionOpen Then
                         Log($"⛔ Signal ({side.Value}) blocked — position already open (positionId={If(_openPositionId.HasValue, _openPositionId.Value.ToString(), "pending")}). Waiting for close before next entry.")
+                    ElseIf (DateTimeOffset.UtcNow - _lastPositionClosedAt).TotalSeconds < ReEntryCooldownSeconds Then
+                        Dim cooldownLeft = CInt(ReEntryCooldownSeconds - (DateTimeOffset.UtcNow - _lastPositionClosedAt).TotalSeconds)
+                        Log($"⏸  Re-entry cooldown — {cooldownLeft}s remaining after last close | signal: {side.Value}")
                     ElseIf Not IsOrderingAllowed.Invoke() Then
                         Log($"⏸  {_strategy.ContractId} market CLOSED — monitoring only (no orders) | signal: {side.Value}")
                     Else
@@ -633,28 +635,6 @@ Namespace TopStepTrader.Services.Trading
 
             Dim priceUsed = lastClose
 
-            Dim slPriceVal As Decimal? = Nothing
-            Dim tpPriceVal As Decimal? = Nothing
-            If _currentAtrValue > 0D Then
-                Dim slDelta = Math.Round(_currentAtrValue * CDec(AtrSlMultiplier), 4)
-                Dim tpDelta = Math.Round(_currentAtrValue * CDec(AtrTpMultiplier), 4)
-                slPriceVal = Math.Round(If(side = OrderSide.Buy, priceUsed - slDelta, priceUsed + slDelta), 4)
-                tpPriceVal = Math.Round(If(side = OrderSide.Buy, priceUsed + tpDelta, priceUsed - tpDelta), 4)
-            Else
-                If _strategy.StopLossPct > 0 Then
-                    slPriceVal = Math.Round(
-                        If(side = OrderSide.Buy,
-                           priceUsed * (1D - _strategy.StopLossPct / 100D),
-                           priceUsed * (1D + _strategy.StopLossPct / 100D)), 4)
-                End If
-                If _strategy.TakeProfitPct > 0 Then
-                    tpPriceVal = Math.Round(
-                        If(side = OrderSide.Buy,
-                           priceUsed * (1D + _strategy.TakeProfitPct / 100D),
-                           priceUsed * (1D - _strategy.TakeProfitPct / 100D)), 4)
-                End If
-            End If
-
             Dim leverage = If(_strategy.Leverage > 0, _strategy.Leverage, 1)
             Dim minNotional = If(fav IsNot Nothing, fav.MinNotionalUsd, 1000D)
             Dim minCash = minNotional / leverage
@@ -662,33 +642,29 @@ Namespace TopStepTrader.Services.Trading
             Dim finalAmount = Math.Max(userAmount, minCash)
             Dim clamped = (finalAmount > userAmount)
 
-            If cloudSlPrice.HasValue Then
-                Dim cloudSlDist = Math.Abs(priceUsed - cloudSlPrice.Value)
-                If _strategy.Condition = StrategyConditionType.LultDivergence Then
-                    slPriceVal = Math.Round(cloudSlPrice.Value, 4)
-                    tpPriceVal = Math.Round(
-                        If(side = OrderSide.Buy,
-                           priceUsed + cloudSlDist * 2D,
-                           priceUsed - cloudSlDist * 2D), 4)
-                ElseIf slPriceVal.HasValue Then
-                    Dim atrSlDist = Math.Abs(priceUsed - slPriceVal.Value)
-                    If cloudSlDist < atrSlDist Then
-                        slPriceVal = cloudSlPrice.Value
-                        tpPriceVal = Math.Round(
-                            If(side = OrderSide.Buy,
-                               priceUsed + cloudSlDist * 2D,
-                               priceUsed - cloudSlDist * 2D), 4)
-                    End If
-                End If
-            End If
+            ' ── Turtle bracket initialisation ─────────────────────────────────────
+            ' DollarPerPoint = units open = (cash × leverage) / entryPrice
+            Dim dollarPerPoint = Math.Round((finalAmount * leverage) / priceUsed, 4)
+            Dim sideStr = If(side = OrderSide.Buy, "BUY", "SELL")
+            _totalDollarPerPoint = dollarPerPoint   ' seed with initial position units
+            _turtleBracket = TopStepTrader.Core.Trading.TurtleBracketManager.Initialise(
+                entryPrice:=priceUsed,
+                side:=sideStr,
+                dollarPerPoint:=dollarPerPoint,
+                atrPrice:=_currentAtrValue,
+                initialSlDollars:=_strategy.InitialSlAmount,
+                initialTpDollars:=_strategy.InitialTpAmount)
+
+            Dim slPriceVal As Decimal? = _turtleBracket.SlPrice
+            Dim tpPriceVal As Decimal? = _turtleBracket.TpPrice
 
             Log($"📋 ORDER | instrId={instrId} side={side} leverage={leverage}x | " &
                 $"user=${userAmount:F2} minCash=${minCash:F2} final=${finalAmount:F2}" &
                 If(clamped, " (clamped to min ✓)", String.Empty))
-            Dim slTpSource = If(_currentAtrValue > 0D, $"ATR={_currentAtrValue:F4} (1.5× / 3.0×)", "pct-based")
-            Log($"📋 priceUsed={priceUsed:F4} | {slTpSource} | " &
-                $"SL={If(slPriceVal.HasValue, slPriceVal.Value.ToString("F4"), "none")} | " &
-                $"TP={If(tpPriceVal.HasValue, tpPriceVal.Value.ToString("F4"), "none")}")
+            Log($"📋 Turtle bracket | priceUsed={priceUsed:F4} ATR={_currentAtrValue:F4} " &
+                $"N=${_turtleBracket.N:F2} step=${_turtleBracket.StepSize:F2} | " &
+                $"SL=${_strategy.InitialSlAmount:F2}→{slPriceVal.Value:F4} " &
+                $"TP=${_strategy.InitialTpAmount:F2}→{tpPriceVal.Value:F4}")
 
             Dim entryOrder As New Order With {
                 .AccountId = _strategy.AccountId,
@@ -700,6 +676,7 @@ Namespace TopStepTrader.Services.Trading
                 .Leverage = leverage,
                 .StopLossRate = slPriceVal,
                 .TakeProfitRate = tpPriceVal,
+                .IsTslEnabled = True,
                 .Status = OrderStatus.Pending,
                 .PlacedAt = DateTimeOffset.UtcNow,
                 .Notes = $"AI Strategy: {_strategy.Name}"
@@ -786,6 +763,7 @@ Namespace TopStepTrader.Services.Trading
             _openPositionId = Nothing
             _openTradeCount = 0
             _positionOpenedAt = DateTimeOffset.MinValue
+            _lastPositionClosedAt = DateTimeOffset.UtcNow  ' start re-entry cooldown
             _lastApiPnl = 0D
             _currentTrendSide = newSide
             _reversalCandidateSide = Nothing
@@ -795,7 +773,7 @@ Namespace TopStepTrader.Services.Trading
             ResetTrailState()
         End Function
 
-        ' ── Confidence-driven scale-in / neutral-exit (EMA/RSI strategy) ─────────
+        ' ── Confidence-driven scale-in / neutral-exit (EMA/RSI strategy) ───────
 
         Private Async Function EvaluateConfidenceActionsAsync(
                 rawUpPct As Integer,
@@ -821,6 +799,9 @@ Namespace TopStepTrader.Services.Trading
                 If side.HasValue Then
                     If Not IsOrderingAllowed.Invoke() Then
                         Log($"⏸  {_strategy.ContractId} market CLOSED — monitoring only (no orders) | UP={rawUpPct}% DOWN={rawDownPct}% signal={side.Value}")
+                    ElseIf (DateTimeOffset.UtcNow - _lastPositionClosedAt).TotalSeconds < ReEntryCooldownSeconds Then
+                        Dim cooldownLeft = CInt(ReEntryCooldownSeconds - (DateTimeOffset.UtcNow - _lastPositionClosedAt).TotalSeconds)
+                        Log($"⏸  Re-entry cooldown — {cooldownLeft}s remaining after last close | UP={rawUpPct}% DOWN={rawDownPct}%")
                     Else
                         Log($"🎯 INITIAL TRADE — {side.Value} | Confidence: UP={rawUpPct}% DOWN={rawDownPct}%")
                         _positionOpen = True
@@ -831,17 +812,13 @@ Namespace TopStepTrader.Services.Trading
                 Return
             End If
 
-            Dim withinPullback = _currentEma21 > 0D AndAlso
-                Math.Abs(lastClose - _currentEma21) / _currentEma21 <= CDec(ScaleInPullbackTolerance)
-            Dim isExtremeBull = (rawUpPct > ScaleInBullThreshold AndAlso withinPullback)
-            Dim isExtremeBear = (rawUpPct < ScaleInBearThreshold AndAlso withinPullback)
+            Dim isExtremeBull = rawUpPct > ScaleInBullThreshold
+            Dim isExtremeBear = rawUpPct < ScaleInBearThreshold
 
             If Not isExtremeBull AndAlso Not isExtremeBear Then
                 If _extremeConfidenceDurationCount > 0 Then
-                    Dim ema21Dist = If(_currentEma21 > 0D,
-                                       $" (EMA21 dist={Math.Abs(lastClose - _currentEma21) / _currentEma21 * 100D:F3}%, need ≤0.1%)",
-                                       String.Empty)
-                    Log($"Scale-in blocked — UP={rawUpPct}% DOWN={rawDownPct}%{ema21Dist} | timer reset")
+                    Log($"Scale-in paused — UP={rawUpPct}% DOWN={rawDownPct}% " &
+                        $"(need >{ScaleInBullThreshold}% or <{ScaleInBearThreshold}%) | timer reset")
                 End If
                 _extremeConfidenceDurationCount = 0
                 Return
@@ -918,27 +895,11 @@ Namespace TopStepTrader.Services.Trading
             End If
 
             Dim priceUsed = lastClose
-            Dim slPriceVal As Decimal? = Nothing
-            Dim tpPriceVal As Decimal? = Nothing
-            If _currentAtrValue > 0D Then
-                Dim slDelta = Math.Round(_currentAtrValue * CDec(AtrSlMultiplier), 4)
-                Dim tpDelta = Math.Round(_currentAtrValue * CDec(AtrTpMultiplier), 4)
-                slPriceVal = Math.Round(If(side = OrderSide.Buy, priceUsed - slDelta, priceUsed + slDelta), 4)
-                tpPriceVal = Math.Round(If(side = OrderSide.Buy, priceUsed + tpDelta, priceUsed - tpDelta), 4)
-            Else
-                If _strategy.StopLossPct > 0 Then
-                    slPriceVal = Math.Round(
-                        If(side = OrderSide.Buy,
-                           priceUsed * (1D - _strategy.StopLossPct / 100D),
-                           priceUsed * (1D + _strategy.StopLossPct / 100D)), 4)
-                End If
-                If _strategy.TakeProfitPct > 0 Then
-                    tpPriceVal = Math.Round(
-                        If(side = OrderSide.Buy,
-                           priceUsed * (1D + _strategy.TakeProfitPct / 100D),
-                           priceUsed * (1D - _strategy.TakeProfitPct / 100D)), 4)
-                End If
-            End If
+
+            ' Reuse the current bracket's SL/TP prices for the scale-in order.
+            ' The bracket continues to track the whole position as one unit.
+            Dim slPriceVal As Decimal? = If(_turtleBracket IsNot Nothing, _turtleBracket.SlPrice, CType(Nothing, Decimal?))
+            Dim tpPriceVal As Decimal? = If(_turtleBracket IsNot Nothing, _turtleBracket.TpPrice, CType(Nothing, Decimal?))
 
             Dim minNotional = If(fav IsNot Nothing, fav.MinNotionalUsd, 1000D)
             Dim minCash = minNotional / _strategy.ScaleInLeverage
@@ -962,6 +923,7 @@ Namespace TopStepTrader.Services.Trading
                 .Leverage = _strategy.ScaleInLeverage,
                 .StopLossRate = slPriceVal,
                 .TakeProfitRate = tpPriceVal,
+                .IsTslEnabled = True,
                 .Status = OrderStatus.Pending,
                 .PlacedAt = DateTimeOffset.UtcNow,
                 .Notes = $"AI Scale-In {scaleIndex}/{MaxScaleInTrades}: {_strategy.Name}"
@@ -975,11 +937,24 @@ Namespace TopStepTrader.Services.Trading
                 End If
                 Log($"✅ Scale-in {scaleIndex}/{MaxScaleInTrades} {side} placed — instrId={instrId} amount=${finalAmount:F2} " &
                     $"SL={If(slPriceVal.HasValue, slPriceVal.Value.ToString("F4"), "none")} " &
-                    $"TP={If(tpPriceVal.HasValue, tpPriceVal.Value.ToString("F4"), "none")}")
+                    $"TP={If(tpPriceVal.HasValue, tpPriceVal.Value.ToString("F4"), "none")} TSL=on")
             Catch ex As Exception
                 Log($"⚠️  Scale-in {scaleIndex}/{MaxScaleInTrades} order failed: {ex.Message}")
                 Return
             End Try
+
+            ' ── Rescale the Turtle bracket to include this position's units ─────────
+            ' DollarPerPoint grows with each scale-in; rescaling ensures SL/TP thresholds
+            ' reflect the combined portfolio P&L, not just the initial single position.
+            If _turtleBracket IsNot Nothing AndAlso priceUsed > 0D Then
+                Dim newPositionDpp = Math.Round((finalAmount * CDec(_strategy.ScaleInLeverage)) / priceUsed, 4)
+                _totalDollarPerPoint += newPositionDpp
+                _turtleBracket = TopStepTrader.Core.Trading.TurtleBracketManager.Rescale(
+                    _turtleBracket, _totalDollarPerPoint)
+                Log($"🐢 Bracket rescaled — scale-in {scaleIndex} added {newPositionDpp:F4} DPP " &
+                    $"→ total DPP={_totalDollarPerPoint:F4} " &
+                    $"SL=${_turtleBracket.CurrentSlDollars:F2} TP=${_turtleBracket.CurrentTpDollars:F2}")
+            End If
 
             RaiseEvent TradeOpened(Me, New TradeOpenedEventArgs(
                 side, _strategy.ContractId, _pendingConfidencePct,
@@ -1019,6 +994,7 @@ Namespace TopStepTrader.Services.Trading
             _openPositionId = Nothing
             _openTradeCount = 0
             _positionOpenedAt = DateTimeOffset.MinValue
+            _lastPositionClosedAt = DateTimeOffset.UtcNow  ' start re-entry cooldown
             _lastApiPnl = 0D
             _extremeConfidenceDurationCount = 0
             _scaleInTradeCount = 0
@@ -1028,118 +1004,68 @@ Namespace TopStepTrader.Services.Trading
             ResetTrailState()
         End Function
 
-        ' ── Stepped trailing bracket methods ──────────────────────────────────────
+        ' ── Turtle bracket monitoring ─────────────────────────────────────────────
 
         ''' <summary>
-        ''' Engine-side stepped trailing bracket (free-ride SL/TP).
-        ''' Activates when profitPct ≥ 2.0%.  Advances tracked SL/TP in 0.5% steps.
-        ''' Closes the position and fires TradeClosed when the current bar price breaches
-        ''' the tracked SL or reaches the tracked TP.
-        ''' Returns True when the position was closed this tick so the caller can return early.
+        ''' Turtle bracket manager — checks current P&amp;L against bracket levels.
+        ''' If SL is breached: closes the position and fires TradeClosed, returns True.
+        ''' If TP is reached: advances the bracket and pushes updated SL/TP to eToro, returns False.
+        ''' Returns False in all non-close cases so the caller continues normally.
         ''' </summary>
         Private Async Function ApplySteppedTrailAsync(currentPrice As Decimal,
                                                       ct As CancellationToken) As Task(Of Boolean)
-            If _lastEntryPrice <= 0D Then Return False
+            If _turtleBracket Is Nothing OrElse _lastEntryPrice <= 0D Then Return False
 
-            Dim profitPct As Decimal =
-                If(_lastEntrySide = OrderSide.Buy,
-                   (currentPrice - _lastEntryPrice) / _lastEntryPrice * 100D,
-                   (_lastEntryPrice - currentPrice) / _lastEntryPrice * 100D)
+            Dim pnl = TopStepTrader.Core.Trading.TurtleBracketManager.ComputePnlDollars(_turtleBracket, currentPrice)
 
-            If _trailLastSteps >= 0 Then
-                Dim slBreached = If(_lastEntrySide = OrderSide.Buy,
-                                    currentPrice <= _trailTrackedSlPrice,
-                                    currentPrice >= _trailTrackedSlPrice)
-                Dim tpReached = (_trailTrackedTpPrice > 0D) AndAlso
-                                If(_lastEntrySide = OrderSide.Buy,
-                                   currentPrice >= _trailTrackedTpPrice,
-                                   currentPrice <= _trailTrackedTpPrice)
+            ' ── SL breach: close position ──────────────────────────────────────
+            If TopStepTrader.Core.Trading.TurtleBracketManager.IsSlBreached(_turtleBracket, pnl) Then
+                Dim lockedPnl = _turtleBracket.CurrentSlDollars
+                Log($"🛑 Turtle SL HIT — price={currentPrice:F4} " &
+                    $"SL={_turtleBracket.SlPrice:F4} P&L=${pnl:F2} " &
+                    $"bracket#{_turtleBracket.BracketNumber} — closing position")
+                Await _orderService.FlattenContractAsync(_strategy.AccountId, _strategy.ContractId, ct)
+                Dim closedCount = Math.Max(1, _openTradeCount)
+                Dim closePnl = _lastApiPnl
+                For i As Integer = 1 To closedCount
+                    RaiseEvent TradeClosed(Me, New TradeClosedEventArgs("Turtle SL", closePnl))
+                    closePnl = 0D
+                Next
+                _positionOpen = False
+                _openPositionId = Nothing
+                _openTradeCount = 0
+                _positionOpenedAt = DateTimeOffset.MinValue
+                _lastPositionClosedAt = DateTimeOffset.UtcNow  ' start re-entry cooldown
+                _lastApiPnl = 0D
+                ResetTrailState()
+                Return True
+            End If
 
-                If slBreached OrElse tpReached Then
-                    Dim reason = If(slBreached, "Trail SL", "Trail TP")
-                    Log($"🛑 {reason} HIT — price={currentPrice:F4} " &
-                        $"SL={_trailTrackedSlPrice:F4} TP={_trailTrackedTpPrice:F4} " &
-                        $"profit={profitPct:F2}% — closing position")
-                    Await _orderService.FlattenContractAsync(_strategy.AccountId, _strategy.ContractId, ct)
-                    Dim closedCount = Math.Max(1, _openTradeCount)
-                    Dim closePnl = _lastApiPnl
-                    For i As Integer = 1 To closedCount
-                        RaiseEvent TradeClosed(Me, New TradeClosedEventArgs(reason, closePnl))
-                        closePnl = 0D
-                    Next
-                    _positionOpen = False
-                    _openPositionId = Nothing
-                    _openTradeCount = 0
-                    _positionOpenedAt = DateTimeOffset.MinValue
-                    _lastApiPnl = 0D
-                    ResetTrailState()
-                    Return True
+            ' ── TP reached: advance bracket ────────────────────────────────────
+            If TopStepTrader.Core.Trading.TurtleBracketManager.ShouldAdvance(_turtleBracket, pnl) Then
+                _turtleBracket = TopStepTrader.Core.Trading.TurtleBracketManager.Advance(_turtleBracket)
+                Log($"⬆  Turtle bracket #{_turtleBracket.BracketNumber} — " &
+                    $"SL=${_turtleBracket.CurrentSlDollars:F2}→{_turtleBracket.SlPrice:F4} " &
+                    $"TP=${_turtleBracket.CurrentTpDollars:F2}→{_turtleBracket.TpPrice:F4}")
+
+                ' Push updated levels to eToro so the broker holds the new bracket
+                If _openPositionId.HasValue Then
+                    Await _orderService.EditPositionSlTpAsync(
+                        _openPositionId.Value,
+                        _turtleBracket.SlPrice,
+                        _turtleBracket.TpPrice,
+                        enableTsl:=True,
+                        cancel:=ct)
                 End If
             End If
 
-            If profitPct < TrailTriggerPct Then Return False
-
-            Dim steps = CInt(Math.Floor(CDbl(profitPct - TrailTriggerPct) / CDbl(TrailStepPct)))
-            Dim steppedProfit = TrailTriggerPct + steps * TrailStepPct
-
-            If _trailLastSteps = -1 Then
-                If _lastTpPrice > 0D Then
-                    Dim existingTpPct As Decimal =
-                        If(_lastEntrySide = OrderSide.Buy,
-                           (_lastTpPrice - _lastEntryPrice) / _lastEntryPrice * 100D,
-                           (_lastEntryPrice - _lastTpPrice) / _lastEntryPrice * 100D)
-                    Dim computed = existingTpPct - steppedProfit
-                    _trailTpAbove = If(computed > 0D, computed, TrailDefaultTpAbove)
-                Else
-                    _trailTpAbove = TrailDefaultTpAbove
-                End If
-                _trailLastSteps = steps
-                UpdateTrailLevels(steppedProfit)
-                Log($"🔰 TRAIL ARMED — profit={profitPct:F2}% step={steps} " &
-                    $"steppedProfit={steppedProfit:F2}% " &
-                    $"SL={_trailTrackedSlPrice:F4} (+{steppedProfit - TrailSlOffset:F2}%) " &
-                    $"TP={_trailTrackedTpPrice:F4} (+{steppedProfit + _trailTpAbove:F2}%)")
-                Return False
-            End If
-
-            If steps <= _trailLastSteps Then Return False
-
-            _trailLastSteps = steps
-            UpdateTrailLevels(steppedProfit)
-            Log($"⬆  TRAIL STEP {steps} — profit={profitPct:F2}% " &
-                $"steppedProfit={steppedProfit:F2}% " &
-                $"SL={_trailTrackedSlPrice:F4} (+{steppedProfit - TrailSlOffset:F2}%) " &
-                $"TP={_trailTrackedTpPrice:F4} (+{steppedProfit + _trailTpAbove:F2}%)")
             Return False
         End Function
 
-        ''' <summary>
-        ''' Recomputes the tracked SL and TP absolute prices from the latest stepped profit level.
-        ''' Never loosens: for Long, prices only increase; for Short, prices only decrease.
-        ''' </summary>
-        Private Sub UpdateTrailLevels(steppedProfit As Decimal)
-            Dim slProfitPct = steppedProfit - TrailSlOffset
-            Dim tpProfitPct = steppedProfit + _trailTpAbove
-
-            If _lastEntrySide = OrderSide.Buy Then
-                Dim newSl = Math.Round(_lastEntryPrice * (1D + slProfitPct / 100D), 4)
-                Dim newTp = Math.Round(_lastEntryPrice * (1D + tpProfitPct / 100D), 4)
-                _trailTrackedSlPrice = If(_trailTrackedSlPrice = 0D, newSl, Math.Max(_trailTrackedSlPrice, newSl))
-                _trailTrackedTpPrice = If(_trailTrackedTpPrice = 0D, newTp, Math.Max(_trailTrackedTpPrice, newTp))
-            Else
-                Dim newSl = Math.Round(_lastEntryPrice * (1D - slProfitPct / 100D), 4)
-                Dim newTp = Math.Round(_lastEntryPrice * (1D - tpProfitPct / 100D), 4)
-                _trailTrackedSlPrice = If(_trailTrackedSlPrice = 0D, newSl, Math.Min(_trailTrackedSlPrice, newSl))
-                _trailTrackedTpPrice = If(_trailTrackedTpPrice = 0D, newTp, Math.Min(_trailTrackedTpPrice, newTp))
-            End If
-        End Sub
-
-        ''' <summary>Resets all stepped trailing state. Called on position open, close, reversal, and flatten.</summary>
+        ''' <summary>Resets Turtle bracket state. Called on position open, close, reversal, and flatten.</summary>
         Private Sub ResetTrailState()
-            _trailLastSteps = -1
-            _trailTpAbove = TrailDefaultTpAbove
-            _trailTrackedSlPrice = 0D
-            _trailTrackedTpPrice = 0D
+            _turtleBracket = Nothing
+            _totalDollarPerPoint = 0D
         End Sub
 
         Private Sub Log(message As String)

@@ -24,6 +24,39 @@ Namespace TopStepTrader.Core.Enums
         ''' Optimised for NQ 5-minute bars; time-filtered to 11:00–17:00 UTC (London + NY pre-market).
         ''' </summary>
         LultDivergence = 7
+        ''' <summary>
+        ''' BB Squeeze Scalper: Bollinger Bands (12,2.0) + Band Width + %B + RSI(7) + EMA(5) + ATR(10).
+        ''' Dual-mode: Squeeze Breakout (momentum) or Band Bounce (mean-reversion).
+        ''' 1-minute bars; 15-second polling; tight 0.4% TP / 0.2% SL scalp targets.
+        ''' </summary>
+        BbSqueezeScalper = 8
+
+        ' ── QuantLab Research Indicators ─────────────────────────────────────
+
+        ''' <summary>
+        ''' Connors RSI-2: 2-period RSI + SMA(200) long-term trend filter + SMA(5) exit trigger.
+        ''' Mean-reversion system validated at 67–72% win rate on daily equity/commodity bars.
+        ''' </summary>
+        ConnorsRsi2 = 9
+
+        ''' <summary>
+        ''' SuperTrend: ATR(10) × 3.0 multiplier dynamic support/resistance flip indicator.
+        ''' Trend-following; validated at 40–52% win rate with positive expectancy from trend runs.
+        ''' </summary>
+        SuperTrend = 10
+
+        ''' <summary>
+        ''' Donchian Channel (20-bar): highest high / lowest low channel breakout.
+        ''' Turtle-trading breakout system; validated at 30–40% win rate, large R:R winners.
+        ''' </summary>
+        DonchianBreakout = 11
+
+        ''' <summary>
+        ''' Bollinger Bands (20,2) + RSI(14) dual-confirmation mean reversion.
+        ''' Both indicators must confirm the extreme before entry fires.
+        ''' Validated at 55–65% win rate on daily charts; Sharpe 0.6–1.2.
+        ''' </summary>
+        BbRsiMeanReversion = 12
     End Enum
 
 End Namespace

@@ -20,8 +20,8 @@ Namespace TopStepTrader.Tests.Backtest
             Assert.NotNull(result)
             Assert.Equal("200", result.Capital)
             Assert.Equal("1", result.Qty)
-            Assert.Equal("4.0", result.TakeProfitPct)
-            Assert.Equal("1.5", result.StopLossPct)
+            Assert.Equal("20", result.InitialTpAmount)
+            Assert.Equal("10", result.InitialSlAmount)
         End Sub
 
         ' ══════════════════════════════════════════════════════════════════
@@ -84,10 +84,13 @@ Namespace TopStepTrader.Tests.Backtest
         ' ══════════════════════════════════════════════════════════════════
 
         <Fact>
-        Public Sub Defaults_ContainsOnlyEmaRsiCombined()
-            ' TICKET-006 design decision: only one combined strategy registered.
-            Assert.Single(StrategyDefaults.Defaults)
+        Public Sub Defaults_ContainsAllRegisteredStrategies()
+            ' TICKET-006 design decision: combined multi-indicator strategies only.
+            ' EMA/RSI Combined + Multi-Confluence Engine + BB Squeeze Scalper = 3 entries.
+            Assert.Equal(3, StrategyDefaults.Defaults.Count)
             Assert.True(StrategyDefaults.Defaults.ContainsKey("EMA/RSI Combined"))
+            Assert.True(StrategyDefaults.Defaults.ContainsKey("Multi-Confluence Engine"))
+            Assert.True(StrategyDefaults.Defaults.ContainsKey("BB Squeeze Scalper"))
         End Sub
 
         <Fact>
